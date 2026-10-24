@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>OmniNexus · 本地 LLM 核心</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <img src="/static/favicon.svg" alt="" width="34" height="34">
+        <div class="brand-text">
+          <strong>OmniNexus</strong>
+          <span>本地 LLM 编排核心</span>
+        </div>
+      </div>
+
+      <button class="new-chat" id="new-chat" type="button">
+        <span aria-hidden="true">＋</span> 新对话
+      </button>
+
+      <div class="sidebar-label">对话存档 <span id="session-count"></span></div>
+      <nav class="session-list" id="session-list" aria-label="对话存档"></nav>
+
+      <div class="sidebar-footer">
+        <div class="status-line">
+          <span class="dot" id="status-dot"></span>
+          <span id="status-text">正在连接…</span>
+        </div>
+        <button class="text-button" id="open-providers" type="button">厂商与模型</button>
+        <button class="text-button" id="open-prompts" type="button">提示词管理</button>
+        <a class="text-button" href="/docs" target="_blank" rel="noopener">API 文档</a>
+        <p class="privacy-note">对话与密钥只在本机。网络搜索仅发送当前查询。</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-button mobile-only" id="toggle-sidebar" type="button" aria-label="打开侧栏">☰</button>
+        <div class="selectors">
+          <label class="field">
+            <span>模型</span>
+            <select id="model-select" aria-label="选择模型"></select>
+          </label>
+          <label class="field">
+            <span>提示词</span>
+            <select id="prompt-select" aria-label="选择提示词"></select>
+          </label>
+          <label class="toggle" title="仅发送当前查询到配置的搜索源">
+            <input type="checkbox" id="search-toggle">
+            <span>联网搜索</span>
+          </label>
+        </div>
+        <div class="top-actions">
+          <span class="session-title" id="session-title">新对话</span>
+          <button class="icon-button" id="export-session" type="button" title="导出 JSON" aria-label="导出对话">⇩</button>
+          <button class="icon-button danger" id="delete-session" type="button" title="删除对话" aria-label="删除对话">⌫</button>
+        </div>
+      </header>
+
+      <section class="chat" id="chat" aria-live="polite">
+        <div class="welcome" id="welcome">
+          <div class="welcome-mark">◉</div>
+          <h1>本地优先的模型编排</h1>
+          <p>输入 → 模型网关 → 带情感 / 类型 / 意图标签的输出事件。</p>
+          <div class="welcome-grid">
+            <div><strong>多厂商</strong><span>切换到已配置的任意模型，上下文保留。</span></div>
+            <div><strong>可降级</strong><span>主模型失败时按链路自动切换。</span></div>
+            <div><strong>有出处</strong><span>联网结果带引用，原文与标签可追溯。</span></div>
+          </div>
+        </div>
+        <div class="messages" id="messages"></div>
+      </section>
+
+      <footer class="composer-wrap">
+        <form class="composer" id="composer">
+          <div class="attachment-preview" id="attachment-preview" hidden>
+            <img id="attachment-image" alt="待发送图片">
+            <button type="button" class="remove-attachment" id="remove-attachment" aria-label="移除图片">×</button>
+          </div>
+          <textarea id="message-input" rows="1" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）" autocomplete="off"></textarea>
+          <div class="composer-actions">
+            <div class="left-actions">
+              <button type="button" class="icon-button" id="attach-image" title="附加图片" aria-label="附加图片">▧</button>
+              <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+              <span class="hint" id="composer-hint">模型：—</span>
+            </div>
+            <div class="right-actions">
+              <button type="button" class="stop-button" id="stop" hidden>停止</button>
+              <button type="submit" class="send-button" id="send">发送</button>
+            </div>
+          </div>
+        </form>
+        <p class="disclaimer">模型输出可能不准确。OmniNexus 不托管账户与密钥。</p>
+      </footer>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="prompt-modal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="prompt-modal-title">
+      <header class="modal-header">
+        <div>
+          <h2 id="prompt-modal-title">提示词管理</h2>
+          <p>模板与模型解耦；每次保存生成一个不可变版本。</p>
+        </div>
+        <button class="icon-button" data-close="prompt-modal" type="button" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body prompt-layout">
+        <aside class="prompt-list">
+          <div class="prompt-list-head">
+            <strong>配置</strong>
+            <button class="text-button" id="new-prompt-profile" type="button">＋ 新建</button>
+          </div>
+          <div id="prompt-profiles"></div>
+        </aside>
+        <div class="prompt-editor">
+          <label class="field full">
+            <span>名称</span>
+            <input id="prompt-name" type="text" maxlength="80" autocomplete="off">
+          </label>
+          <label class="field full">
+            <span>系统提示词模板（支持 Jinja2 变量）</span>
+            <textarea id="prompt-template" rows="13" spellcheck="false" placeholder="留空表示不注入系统提示词。&#10;&#10;可用变量：{{ current_time }}、{{ locale }}、{{ model }}、{{ session_id }}、{{ user_input }}"></textarea>
+          </label>
+          <p class="field-note">正式人设与提示词由产品完成后填写。仓库不自带人设。</p>
+          <div class="editor-actions">
+            <button class="secondary" id="reset-prompt" type="button">重置到初始版本</button>
+            <button class="secondary danger-text" id="delete-prompt" type="button">删除配置</button>
+            <button class="primary" id="save-prompt" type="button">保存为新版本</button>
+          </div>
+          <div class="version-block">
+            <strong>版本历史</strong>
+            <div id="prompt-versions" class="versions"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="providers-modal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="providers-modal-title">
+      <header class="modal-header">
+        <div>
+          <h2 id="providers-modal-title">厂商与模型</h2>
+          <p>BYOK：密钥只从本机环境变量读取，不经过浏览器、不写入日志。</p>
+        </div>
+        <button class="icon-button" data-close="providers-modal" type="button" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body">
+        <div class="notice">
+          在项目根目录复制 <code>.env.example</code> 为 <code>.env</code>，填入所需厂商密钥后重启服务。
+          未配置的模型会显示为不可用；本地模型无需密钥。
+        </div>
+        <div class="provider-list" id="provider-list"></div>
+        <div class="reserved-block">
+          <h3>保留扩展：外部记忆管线 <span class="badge">Reserved</span></h3>
+          <p>本期未接入，默认禁用；正式记忆机制是本地对话存档 + 最近窗口。接口契约与适配器保留，未接入时健康探测返回 unavailable，对主流程零影响。</p>
+          <div id="memory-status" class="mono"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

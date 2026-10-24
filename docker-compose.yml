@@ -1,0 +1,32 @@
+services:
+  omninexus:
+    build: .
+    image: omninexus:0.1.0
+    container_name: omninexus
+    ports:
+      # Publish only on the host loopback. Do not expose this service directly
+      # to the Internet: it has no built-in authentication.
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      OMNI_HOST: 0.0.0.0
+      OMNI_PORT: "8000"
+    volumes:
+      - omninexus-data:/app/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/healthz', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  omninexus-data:

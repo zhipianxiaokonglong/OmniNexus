@@ -1,0 +1,463 @@
+# OmniNexus default configuration.
+# This file contains no secrets. API keys are read from the environment variable
+# named by each provider's `api_key_env`; `.env` is git-ignored.
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  cors_origins: []
+  max_body_bytes: 20971520
+  trusted_hosts: [127.0.0.1, localhost, "::1", testserver]
+  log_level: INFO
+  log_format: text
+  log_file: null
+
+storage:
+  data_dir: ./data
+  db_filename: omninexus.db
+  keep_partial_on_disconnect: true
+
+gateway:
+  default_model: openai:gpt-4o-mini
+  # Per-model fallback chains are declared under `models`. If the requested
+  # model's whole chain is unconfigured, the gateway may route to another
+  # configured model and marks the turn as degraded/rerouted.
+  fallback_models: []
+  connect_timeout_s: 8
+  request_timeout_s: 90
+  first_token_timeout_s: 45
+  max_retries: 2
+  retry_backoff_s: 0.6
+  retry_max_backoff_s: 8
+  rate_limit_rpm: 120
+  rate_limit_max_wait_s: 1.5
+  max_output_tokens: 2048
+  temperature: 0.7
+  top_p: 1.0
+  context_reserve_tokens: 512
+  max_history_messages: 200
+
+prompts:
+  default_profile: default
+  max_template_chars: 32000
+  allow_custom_profiles: true
+
+memory:
+  # Reserved for future use. The external memory pipeline is NOT part of this
+  # release: this adapter is disabled by default and the formal memory mechanism
+  # is the local conversation archive + recent-window context.
+  # To develop against a future implementation set enabled: true and base_url,
+  # or use OMNI_MEMORY_ENABLED=1 + OMNI_MEMORY_BASE_URL.
+  enabled: false
+  base_url: ""
+  contract_version: "1.0"
+  health_path: /health
+  query_path: /v1/memory/query
+  write_path: /v1/memory/write
+  auth_token_env: OMNI_MEMORY_TOKEN
+  health_interval_s: 30
+  health_timeout_ms: 600
+  query_timeout_ms: 1200
+  write_timeout_ms: 1500
+  circuit_failures: 3
+  circuit_cooldown_s: 30
+  top_k: 5
+  max_items: 8
+  max_context_tokens: 700
+  outbox_max: 2000
+  async_writeback: true
+
+search:
+  # Only the current user query (trimmed) is ever sent to the search provider.
+  enabled: false
+  provider: tavily
+  top_k: 5
+  timeout_s: 10
+  max_query_chars: 256
+  tavily:
+    api_key_env: TAVILY_API_KEY
+    base_url: https://api.tavily.com
+  brave:
+    api_key_env: BRAVE_SEARCH_API_KEY
+    base_url: https://api.search.brave.com
+  searxng:
+    base_url: http://127.0.0.1:8888
+  custom:
+    endpoint: ""
+    api_key_env: ""
+    auth_header: Authorization
+    auth_scheme: Bearer
+
+providers:
+  openai:
+    type: openai
+    label: OpenAI
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+  anthropic:
+    type: anthropic
+    label: Anthropic
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+  gemini:
+    type: gemini
+    label: Google Gemini
+    base_url: https://generativelanguage.googleapis.com
+    api_key_env: GEMINI_API_KEY
+  mistral:
+    type: openai
+    label: Mistral AI
+    base_url: https://api.mistral.ai/v1
+    api_key_env: MISTRAL_API_KEY
+  xai:
+    type: openai
+    label: xAI
+    base_url: https://api.x.ai/v1
+    api_key_env: XAI_API_KEY
+  cohere:
+    type: cohere
+    label: Cohere
+    base_url: https://api.cohere.com
+    api_key_env: COHERE_API_KEY
+  deepseek:
+    type: openai
+    label: DeepSeek
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+  dashscope:
+    type: openai
+    label: 阿里通义千问（百炼）
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key_env: DASHSCOPE_API_KEY
+  volcengine:
+    type: openai
+    label: 字节豆包（火山方舟）
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    api_key_env: ARK_API_KEY
+  zhipu:
+    type: openai
+    label: 智谱 GLM
+    base_url: https://open.bigmodel.cn/api/paas/v4
+    api_key_env: ZHIPU_API_KEY
+  moonshot:
+    type: openai
+    label: 月之暗面 Kimi
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: MOONSHOT_API_KEY
+  qianfan:
+    type: openai
+    label: 百度文心千帆
+    base_url: https://qianfan.baidubce.com/v2
+    api_key_env: QIANFAN_API_KEY
+  spark:
+    type: openai
+    label: 讯飞星火
+    base_url: https://spark-api-open.xf-yun.com/v1
+    api_key_env: SPARK_API_KEY
+  hunyuan:
+    type: openai
+    label: 腾讯混元
+    base_url: https://api.hunyuan.cloud.tencent.com/v1
+    api_key_env: HUNYUAN_API_KEY
+  minimax:
+    type: openai
+    label: MiniMax
+    base_url: https://api.minimax.chat/v1
+    api_key_env: MINIMAX_API_KEY
+  openrouter:
+    type: openai
+    label: OpenRouter
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    headers:
+      HTTP-Referer: http://localhost:8000
+      X-Title: OmniNexus
+  ollama:
+    type: openai
+    label: Ollama (local)
+    base_url: http://127.0.0.1:11434/v1
+    api_key_env: ""
+    requires_key: false
+    enabled: false
+    connect_timeout_s: 2
+  lmstudio:
+    type: openai
+    label: LM Studio (local)
+    base_url: http://127.0.0.1:1234/v1
+    api_key_env: ""
+    requires_key: false
+    enabled: false
+    connect_timeout_s: 2
+  vllm:
+    type: openai
+    label: vLLM (local)
+    base_url: http://127.0.0.1:8000/v1
+    api_key_env: ""
+    requires_key: false
+    enabled: false
+    connect_timeout_s: 2
+  llamacpp:
+    type: openai
+    label: llama.cpp (local)
+    base_url: http://127.0.0.1:8080/v1
+    api_key_env: ""
+    requires_key: false
+    enabled: false
+    connect_timeout_s: 2
+  echo:
+    type: echo
+    label: Offline diagnostic model
+    requires_key: false
+    enabled: false
+
+models:
+  - id: openai:gpt-4o-mini
+    provider: openai
+    model: gpt-4o-mini
+    label: GPT-4o mini
+    input_modalities: [text, image]
+    context_window: 128000
+    fallbacks: [openai:gpt-4o]
+  - id: openai:gpt-4o
+    provider: openai
+    model: gpt-4o
+    label: GPT-4o
+    input_modalities: [text, image]
+    context_window: 128000
+    fallbacks: [openai:gpt-4.1-mini]
+  - id: openai:gpt-4.1-mini
+    provider: openai
+    model: gpt-4.1-mini
+    label: GPT-4.1 mini
+    input_modalities: [text, image]
+    context_window: 1000000
+  - id: anthropic:claude-sonnet-4-20250514
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    label: Claude Sonnet 4
+    input_modalities: [text, image]
+    context_window: 200000
+    max_output_tokens: 4096
+    fallbacks: [anthropic:claude-3-5-haiku-latest]
+  - id: anthropic:claude-3-5-haiku-latest
+    provider: anthropic
+    model: claude-3-5-haiku-latest
+    label: Claude 3.5 Haiku
+    input_modalities: [text, image]
+    context_window: 200000
+  - id: gemini:gemini-2.5-flash
+    provider: gemini
+    model: gemini-2.5-flash
+    label: Gemini 2.5 Flash
+    input_modalities: [text, image]
+    context_window: 1000000
+    fallbacks: [gemini:gemini-2.5-pro]
+  - id: gemini:gemini-2.5-pro
+    provider: gemini
+    model: gemini-2.5-pro
+    label: Gemini 2.5 Pro
+    input_modalities: [text, image]
+    context_window: 1000000
+  - id: mistral:mistral-small-latest
+    provider: mistral
+    model: mistral-small-latest
+    label: Mistral Small
+    input_modalities: [text]
+    context_window: 128000
+    fallbacks: [mistral:pixtral-12b-2409]
+  - id: mistral:pixtral-12b-2409
+    provider: mistral
+    model: pixtral-12b-2409
+    label: Pixtral 12B
+    input_modalities: [text, image]
+    context_window: 128000
+  - id: xai:grok-3-mini
+    provider: xai
+    model: grok-3-mini
+    label: Grok 3 mini
+    input_modalities: [text]
+    context_window: 131072
+    fallbacks: [xai:grok-2-vision-1212]
+  - id: xai:grok-2-vision-1212
+    provider: xai
+    model: grok-2-vision-1212
+    label: Grok 2 Vision
+    input_modalities: [text, image]
+    context_window: 32768
+  - id: cohere:command-a-03-2025
+    provider: cohere
+    model: command-a-03-2025
+    label: Command A
+    input_modalities: [text]
+    context_window: 256000
+    fallbacks: [cohere:command-r-plus-08-2024]
+  - id: cohere:command-r-plus-08-2024
+    provider: cohere
+    model: command-r-plus-08-2024
+    label: Command R+
+    input_modalities: [text]
+    context_window: 128000
+  - id: deepseek:deepseek-chat
+    provider: deepseek
+    model: deepseek-chat
+    label: DeepSeek Chat
+    input_modalities: [text]
+    context_window: 65536
+  - id: deepseek:deepseek-reasoner
+    provider: deepseek
+    model: deepseek-reasoner
+    label: DeepSeek Reasoner
+    input_modalities: [text]
+    context_window: 65536
+  - id: dashscope:qwen-plus
+    provider: dashscope
+    model: qwen-plus
+    label: 通义千问 Plus
+    input_modalities: [text]
+    context_window: 131072
+    fallbacks: [dashscope:qwen-max]
+  - id: dashscope:qwen-max
+    provider: dashscope
+    model: qwen-max
+    label: 通义千问 Max
+    input_modalities: [text]
+    context_window: 32768
+  - id: dashscope:qwen-vl-plus
+    provider: dashscope
+    model: qwen-vl-plus
+    label: 通义千问 VL Plus
+    input_modalities: [text, image]
+    context_window: 32768
+    fallbacks: [dashscope:qwen-plus]
+  - id: volcengine:doubao-1-5-pro-32k-250115
+    provider: volcengine
+    model: doubao-1-5-pro-32k-250115
+    label: 豆包 1.5 Pro
+    input_modalities: [text]
+    context_window: 32768
+    fallbacks: [volcengine:doubao-1-5-vision-pro-32k-250115]
+  - id: volcengine:doubao-1-5-vision-pro-32k-250115
+    provider: volcengine
+    model: doubao-1-5-vision-pro-32k-250115
+    label: 豆包 1.5 Vision Pro
+    input_modalities: [text, image]
+    context_window: 32768
+  - id: zhipu:glm-4-plus
+    provider: zhipu
+    model: glm-4-plus
+    label: GLM-4 Plus
+    input_modalities: [text]
+    context_window: 128000
+    fallbacks: [zhipu:glm-4v-plus-0111]
+  - id: zhipu:glm-4v-plus-0111
+    provider: zhipu
+    model: glm-4v-plus-0111
+    label: GLM-4V Plus
+    input_modalities: [text, image]
+    context_window: 16384
+  - id: moonshot:moonshot-v1-8k
+    provider: moonshot
+    model: moonshot-v1-8k
+    label: Moonshot v1 8K
+    input_modalities: [text]
+    context_window: 8192
+    fallbacks: [moonshot:moonshot-v1-32k]
+  - id: moonshot:moonshot-v1-32k
+    provider: moonshot
+    model: moonshot-v1-32k
+    label: Moonshot v1 32K
+    input_modalities: [text]
+    context_window: 32768
+  - id: moonshot:kimi-latest
+    provider: moonshot
+    model: kimi-latest
+    label: Kimi Latest
+    input_modalities: [text]
+    context_window: 131072
+  - id: qianfan:ernie-4.0-8k
+    provider: qianfan
+    model: ernie-4.0-8k
+    label: 文心一言 4.0 8K
+    input_modalities: [text]
+    context_window: 8192
+  - id: spark:4.0Ultra
+    provider: spark
+    model: 4.0Ultra
+    label: 讯飞星火 4.0 Ultra
+    input_modalities: [text]
+    context_window: 8192
+  - id: hunyuan:hunyuan-turbos-latest
+    provider: hunyuan
+    model: hunyuan-turbos-latest
+    label: 混元 Turbo S
+    input_modalities: [text]
+    context_window: 32768
+    fallbacks: [hunyuan:hunyuan-t1-latest]
+  - id: hunyuan:hunyuan-t1-latest
+    provider: hunyuan
+    model: hunyuan-t1-latest
+    label: 混元 T1
+    input_modalities: [text]
+    context_window: 32768
+  - id: minimax:MiniMax-Text-01
+    provider: minimax
+    model: MiniMax-Text-01
+    label: MiniMax Text 01
+    input_modalities: [text]
+    context_window: 1000000
+  - id: minimax:abab6.5s-chat
+    provider: minimax
+    model: abab6.5s-chat
+    label: abab6.5s
+    input_modalities: [text]
+    context_window: 8192
+  - id: openrouter:openrouter/auto
+    provider: openrouter
+    model: openrouter/auto
+    label: OpenRouter Auto
+    input_modalities: [text, image]
+    context_window: 128000
+    fallbacks: [openrouter:openai/gpt-4o]
+  - id: openrouter:openai/gpt-4o
+    provider: openrouter
+    model: openai/gpt-4o
+    label: GPT-4o (OpenRouter)
+    input_modalities: [text, image]
+    context_window: 128000
+  - id: ollama:llama3.2
+    provider: ollama
+    model: llama3.2
+    label: Llama 3.2 (Ollama)
+    input_modalities: [text]
+    context_window: 131072
+    fallbacks: [ollama:llama3.2-vision]
+  - id: ollama:llama3.2-vision
+    provider: ollama
+    model: llama3.2-vision
+    label: Llama 3.2 Vision (Ollama)
+    input_modalities: [text, image]
+    context_window: 131072
+  - id: lmstudio:local-model
+    provider: lmstudio
+    model: local-model
+    label: LM Studio local model
+    input_modalities: [text]
+    context_window: 32768
+  - id: vllm:local-model
+    provider: vllm
+    model: local-model
+    label: vLLM local model
+    input_modalities: [text]
+    context_window: 32768
+  - id: llamacpp:local-model
+    provider: llamacpp
+    model: local-model
+    label: llama.cpp local model
+    input_modalities: [text]
+    context_window: 8192
+  - id: echo:echo
+    provider: echo
+    model: echo
+    label: Offline diagnostic echo
+    input_modalities: [text]
+    context_window: 8192
