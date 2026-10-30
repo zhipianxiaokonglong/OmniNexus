@@ -25,12 +25,18 @@ venv/
 
 # Tooling
 .pytest_cache/
+.pytest-tmp/
+pytest-cache-files-*/
 .coverage
 coverage.xml
 htmlcov/
 .ruff_cache/
 .mypy_cache/
 node_modules/
+
+# Local test harness / deployment metadata (not part of the product)
+manifest.json
+tools/provider-probe/
 
 # OS / editors
 .DS_Store
