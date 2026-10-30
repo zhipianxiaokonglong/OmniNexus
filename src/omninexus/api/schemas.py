@@ -4,13 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 class SessionCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     title: str | None = Field(default=None, max_length=120)
     model: str | None = None
+    provider_kind: str | None = Field(
+        default=None, validation_alias=AliasChoices("providerKind", "provider_kind")
+    )
+    provider_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("providerId", "provider_id")
+    )
+    model_name: str | None = Field(
+        default=None, validation_alias=AliasChoices("modelName", "model_name")
+    )
     prompt_profile: str | None = None
     web_search: bool = False
 
@@ -24,16 +33,34 @@ class SessionCreate(BaseModel):
 
 
 class SessionUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     title: str | None = Field(default=None, max_length=120)
     model: str | None = None
+    provider_kind: str | None = Field(
+        default=None, validation_alias=AliasChoices("providerKind", "provider_kind")
+    )
+    provider_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("providerId", "provider_id")
+    )
+    model_name: str | None = Field(
+        default=None, validation_alias=AliasChoices("modelName", "model_name")
+    )
     prompt_profile: str | None = None
     web_search: bool | None = None
 
 
 class ModelSwitch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     model: str = Field(min_length=3, max_length=200)
+    provider_kind: str | None = Field(
+        default=None, validation_alias=AliasChoices("providerKind", "provider_kind")
+    )
+    provider_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("providerId", "provider_id")
+    )
+    model_name: str | None = Field(
+        default=None, validation_alias=AliasChoices("modelName", "model_name")
+    )
 
 
 class PromptSwitch(BaseModel):

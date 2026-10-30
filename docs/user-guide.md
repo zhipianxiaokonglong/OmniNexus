@@ -20,7 +20,7 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-在 `.env` 中填入至少一个密钥：
+在 `.env` 中填入至少一个内置厂商密钥，或启动后在设置页添加自定义提供方：
 
 ```dotenv
 OPENAI_API_KEY=sk-你的密钥
@@ -60,9 +60,25 @@ python -m omninexus
 1. 复制 `.env.example` 为 `.env`。
 2. 填写所需厂商的密钥。未填的厂商保持 `（未配置）`，不会被调用。
 3. 重启服务。
-4. 页面左下角「厂商与模型」可查看每个厂商是否已配置。
+4. 左侧「设置 · 模型提供方」可查看内置厂商是否已配置，并添加自定义提供方。
 
 完整厂商、Base URL 与密钥变量名见 [厂商接入](providers.md)。
+
+### 2.1 添加自定义提供方（推荐）
+
+1. 打开 <http://127.0.0.1:8000/settings>；
+2. 点击“添加自定义提供方”；
+3. 填写名称、Base URL（例如 `https://api.example.com/v1`）；
+4. 填写 API Key（本地无鉴权可留空）；保存后只显示掩码；
+5. 手动添加模型，或点击“从 /models 拉取”；选择能力预设（文本/视觉/上下文窗口）；
+6. 点击“测试连接”，成功或“未验证”后保存；
+7. 在“默认提供方 / 模型”中设为默认，或回到聊天页选择。
+
+Base URL **严格拼接**：`https://api.example.com` 会请求 `/chat/completions`；
+`https://api.example.com/v1` 会请求 `/v1/chat/completions`。页面只会在纯域名时非强制提示补 `/v1`。
+
+自定义提供方仅支持 OpenAI 兼容的 `/models` 与 `/chat/completions`。Anthropic/Gemini 原生协议
+请使用内置适配器，或自建 OpenAI 兼容网关。
 
 ### 本地模型
 
@@ -88,7 +104,7 @@ ollama serve
 
 ### 3.2 选择模型
 
-顶部「模型」下拉框按厂商分组。`（未配置）` 项不可选。切换后：
+顶部先选「提供方」，再选「模型」。不可用项会置灰。切换后：
 
 - 会话模型持久化；
 - 历史消息保留，下一轮以新模型继续；
@@ -147,13 +163,15 @@ API 还支持 Markdown 导出：`GET /v1/sessions/{id}/export?format=md`。
 | 会话/消息/引用/提示词 | `data/omninexus.db` |
 | WAL 临时文件 | `data/omninexus.db-wal`, `-shm` |
 | 可选日志 | `data/`（若配置 `server.log_file`） |
-| 密钥 | `.env`（仅本机，Git 忽略） |
+| 自定义提供方 Key 密文/主密钥 | `data/omninexus.db` / `data/provider-secrets.key` |
+| 内置厂商密钥 | `.env`（仅本机，Git 忽略） |
 
 备份：停止服务后复制整个 `data/`。迁移到另一台机器时同时迁移 `.env`（妥善保管）。
+自定义提供方的 Key 依赖 `data/provider-secrets.key`；只迁移数据库会无法解密 Key，需要重新填写。
 
 ## 5. 保留扩展：外部记忆
 
-本期**未接入**外部记忆管线，默认禁用。正式记忆来自本地存档 + 最近窗口。页面「厂商与模型」底部
+本期**未接入**外部记忆管线，默认禁用。正式记忆来自本地存档 + 最近窗口。`GET /v1/memory/status`
 会显示其状态为 `unavailable`。这不影响任何功能。
 
 详见 [保留记忆接口](memory-reserved.md)。
@@ -162,7 +180,12 @@ API 还支持 Markdown 导出：`GET /v1/sessions/{id}/export?format=md`。
 
 | 现象 | 原因/处理 |
 | --- | --- |
-| 页面所有模型显示「未配置」 | `.env` 未填密钥或未重启；检查 `GET /v1/providers` |
+| 页面所有模型显示「未配置」 | 内置厂商未填 `.env`；或到设置页添加/启用自定义提供方 |
+| 自定义提供方测试 401 | 鉴权失败，检查 API Key；确认 Base URL 与协议 |
+| 自定义提供方测试 404 | 检查 Base URL 是否包含 `/v1`；本系统严格拼接，不自动补 |
+| 模型列表拉取失败 | 允许手动填写模型名；先确认 `/models` 是否受支持 |
+| 删除默认提供方被拒 | 先在“默认提供方 / 模型”切换到其他可用项 |
+| 历史会话提示提供方不可用 | 在旧会话迁移向导中手动迁移，或重新选择提供方/模型 |
 | `503 NO_PROVIDER_AVAILABLE` | 无任何已配置模型；填密钥或 `OMNI_ENABLE_ECHO=1` |
 | `502 PROVIDER_AUTH` | 密钥无效/过期/权限不足；检查厂商控制台 |
 | `504 PROVIDER_TIMEOUT` | 网络/厂商慢；可增大 `gateway.first_token_timeout_s`，或配置回退 |

@@ -275,6 +275,9 @@ class SessionRecord(BaseModel):
     id: str
     title: str
     model: str | None = None
+    provider_kind: str | None = None
+    provider_id: str | None = None
+    model_name: str | None = None
     prompt_profile: str | None = None
     web_search: bool = False
     created_at: str

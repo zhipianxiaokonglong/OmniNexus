@@ -1,8 +1,8 @@
 # 测试与自评估报告
 
-- 版本：OmniNexus 0.1.0
-- 任务书：v1.1（外部记忆管线改为 Reserved）
-- 测试日期：2026-10-24
+- 版本：OmniNexus 0.2.0（自定义模型提供方）
+- 任务书：v1.1 + 自定义提供方需求；外部记忆管线仍为 Reserved
+- 测试日期：2026-10-30
 - 环境：Windows 11（amd64），Python 3.13.9，pytest 8.x，httpx MockTransport，SQLite 3
 - 真实付费厂商：**未调用**（无密钥，CI 也不调用）
 - 测试数据：临时目录，运行后删除；仓库不含对话/日志/数据库/测试人格
@@ -10,7 +10,7 @@
 ## 1. 结果摘要
 
 ```text
-61 passed
+73 passed
 ruff check: All checks passed
 coverage: 81% statements/branches (见 §9)
 ```
@@ -41,6 +41,7 @@ coverage: 81% statements/branches (见 §9)
 | `test_search_providers.py` | Tavily/Brave/SearXNG/DuckDuckGo 请求形状与解析 |
 | `test_memory_reserved.py` | 禁用零影响、健康/查询/写回、超时、熔断、直接调用 |
 | `test_provider_adapters.py` | Anthropic/Gemini/Cohere 原生 SSE + 图片编码 + 401 |
+| `test_custom_providers.py` | 自定义提供方 CRUD、Key 加密/掩码、三级测试、多模态探测、严格 URL、默认/删除/禁用、导入导出、迁移、日志脱敏 |
 | `test_privacy.py` | 脱敏、metadata 清理、密钥不出 API、上游正文不回显、运行日志不含对话 |
 | `test_config.py` | 默认禁用、离线 echo、默认配置打包一致、无密钥序列化 |
 
@@ -87,6 +88,8 @@ coverage: 81% statements/branches (见 §9)
 | 检查 | 结果 |
 | --- | --- |
 | `/v1/providers` 不返回密钥值 | PASS |
+| `/v1/custom-providers` 只返回掩码，DB 为 AES-GCM 密文 | PASS |
+| 自定义 Key 不出现在日志/测试错误/导出 | PASS |
 | `/v1/settings` 不返回密钥 | PASS |
 | 上游 500 正文含密钥时不回显 | PASS |
 | 日志脱敏常见密钥格式 + 已加载密钥 | PASS |
@@ -120,6 +123,8 @@ coverage: 81% statements/branches (见 §9)
 | `POST /v1/events` SSE | 200，52 帧，首事件 37ms，final 正常 |
 | Edge headless DOM | 会话列表、39 个模型选项、状态“1 个模型可用”渲染成功 |
 | Edge CDP 实际发送 | 2 条消息、标签“中性/文本/回复”、无 JS 异常 |
+| 自定义提供方 UI（Edge CDP） | 添加表单、Base URL 补 `/v1` 提示、三级测试成功、保存、设默认、聊天流式回复，全部通过 |
+| Key 展示 | 卡片显示 `sk-****1234`，无完整 Key |
 | 页面截图 | 无遮挡、无空白模态框（修复 `[hidden]` 后） |
 
 浏览器自动化不是 CI 的一部分（本机 Edge 驱动不稳定）；CI 覆盖 API/SSE 契约。
@@ -174,6 +179,21 @@ coverage: 81% statements/branches (见 §9)
 - **回归**：headless 截图 + DOM 检查；后续可加视觉回归。
 - **预防**：组件显隐用显式 class 或统一 `[hidden]` 规则。
 
+### R-07 导入配置 422：导出文件根字段被拒绝（P2）
+
+- **现象**：导出 JSON 直接导入返回 422。
+- **直接原因**：`ImportPayload` 使用 `extra="forbid"`，导出文件含 `exportedAt` 元数据。
+- **修复**：导入 schema 允许未知元数据（仍只读取 `schemaVersion`/`providers`）。
+- **回归**：`test_export_import_never_contains_key`。
+
+### R-08 自定义提供方默认模型丢失（P2）
+
+- **现象**：编辑/保存后默认模型可能回落为第一个模型。
+- **直接原因**：数据表初期未存 `default_model`，读取时用首个模型推断。
+- **修复**：增加 `default_model` 列并在创建/更新时持久化；表单增加默认模型选择。
+- **回归**：CRUD、默认设置与 UI E2E 检查。
+- **预防**：前端配置对象字段必须在 DB/API 双向映射测试中覆盖。
+
 ### R-06 保留插件禁用状态返回 `disabled` 而非 `unavailable`（P2）
 
 - **现象**：v1.1 要求“健康探测固定返回 unavailable”，实现返回自定义 `disabled`。
@@ -186,11 +206,12 @@ coverage: 81% statements/branches (见 §9)
 
 ```text
 command: python -m pytest --cov=omninexus --cov-report=term -q
-TOTAL 3252 stmts, 486 miss, 904 branches, 235 partial, 81% coverage
+TOTAL 4336 stmts, 648 miss, 1232 branches, 324 partial, 81% coverage
 ```
 
-主要模块：orchestrator 80%、gateway/router 79%、prompts 82%、sessions 83%、storage 84%、
-search 81%、memory/plugin 80%、OpenAI-compatible 79%、Anthropic 83%、Gemini 75%、Cohere 66%。
+主要模块：orchestrator 80%、gateway/router 79%、prompts 82%、sessions 83%、storage 91%、
+search 81%、memory/plugin 80%、providers（store/service/tester 等）纳入新增测试、
+OpenAI-compatible 79%、Anthropic 83%、Gemini 75%、Cohere 66%。
 
 未覆盖部分主要是：真实厂商非 200 分支、浏览器交互、Docker 运行、保留记忆插件的极端网络错误。
 核心路径（输入、网关流、回退、提示词、存档、搜索、标签、隐私）均有直接测试。CI 不设硬性覆盖率
@@ -207,6 +228,8 @@ search 81%、memory/plugin 80%、OpenAI-compatible 79%、Anthropic 83%、Gemini 
 5. **单进程限流/熔断**：多 worker 部署需外部限流；SQLite 适合本地单用户/小团队。
 6. **未做压力/长稳测试**：建议上线前补 100+ 并发与 24h 稳定性测试。
 7. **无内建认证**：默认回环监听；对外必须加反向代理认证。
+8. **自定义提供方不做跨提供方回退**：这是有意的数据边界；失败给可读错误。
+9. **Web Key 加密依赖本机主密钥**：能访问本机账户的人仍可能读取；系统钥匙串留待桌面版。
 
 ## 11. 测试人格与仓库卫生
 

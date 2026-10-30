@@ -42,14 +42,44 @@ def _disposition(filename: str, session_id: str, extension: str) -> str:
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
 
 
-def _validate_model(request: Request, model_id: str) -> None:
-    if not request.app.state.config.model_config_by_id(model_id):
-        raise OmniError(
-            ErrorCode.UNKNOWN_MODEL,
-            "Unknown model id.",
-            status_code=404,
-            details={"model": model_id},
+async def _target(
+    request: Request,
+    *,
+    provider_kind: str | None,
+    provider_id: str | None,
+    model_name: str | None,
+    legacy_model: str | None,
+) -> tuple[str, str, str, str]:
+    service = request.app.state.provider_service
+    if provider_kind or provider_id:
+        kind = provider_kind or "custom"
+        if not provider_id or not model_name:
+            raise OmniError(
+                ErrorCode.INVALID_INPUT,
+                "必须同时提供提供方和模型。",
+                status_code=422,
+            )
+        ref = service.canonical_ref(kind, provider_id, model_name)
+    elif legacy_model:
+        kind, provider_id, model_name = service.resolve_ref(legacy_model)
+        ref = legacy_model
+    else:
+        defaults = await service.defaults()
+        kind, provider_id, model_name = (
+            defaults.provider_kind,
+            defaults.provider_id,
+            defaults.model,
         )
+        ref = service.canonical_ref(kind, provider_id, model_name)
+    if not provider_id or not model_name:
+        raise OmniError(ErrorCode.MODEL_UNAVAILABLE, "模型不可用。", status_code=422)
+    if not await service.validate_target(kind, provider_id, model_name):
+        raise OmniError(
+            ErrorCode.MODEL_UNAVAILABLE,
+            "提供方或模型不可用，请先在设置中启用。",
+            status_code=422,
+        )
+    return kind, provider_id, model_name, ref
 
 
 async def _validate_profile(request: Request, profile_id: str) -> None:
@@ -94,8 +124,13 @@ async def create_event(request: Request, event: InboundEvent) -> Response:
 @router.post("/sessions", status_code=201)
 async def create_session(request: Request, body: SessionCreate) -> dict[str, Any]:
     config = request.app.state.config
-    model = body.model or config.gateway.default_model
-    _validate_model(request, model)
+    kind, provider_id, model_name, model = await _target(
+        request,
+        provider_kind=body.provider_kind,
+        provider_id=body.provider_id,
+        model_name=body.model_name or body.model,
+        legacy_model=body.model if not (body.provider_kind or body.provider_id) else None,
+    )
     profile_id = body.prompt_profile or config.prompts.default_profile
     await _validate_profile(request, profile_id)
     session_id = str(uuid.uuid4())
@@ -104,6 +139,9 @@ async def create_session(request: Request, body: SessionCreate) -> dict[str, Any
         id=session_id,
         title=body.title or "New conversation",
         model=model,
+        provider_kind=kind,
+        provider_id=provider_id,
+        model_name=model_name,
         prompt_profile=profile_id,
         web_search=body.web_search,
         created_at=now,
@@ -133,8 +171,24 @@ async def update_session(request: Request, session_id: str, body: SessionUpdate)
         for key, value in body.model_dump(exclude_unset=True).items()
         if value is not None
     }
-    if "model" in fields:
-        _validate_model(request, fields["model"])
+    if fields.get("provider_kind") or fields.get("provider_id") or fields.get("model"):
+        kind, provider_id, model_name, model = await _target(
+            request,
+            provider_kind=fields.get("provider_kind"),
+            provider_id=fields.get("provider_id"),
+            model_name=fields.get("model_name") or fields.get("model"),
+            legacy_model=fields.get("model")
+            if not (fields.get("provider_kind") or fields.get("provider_id"))
+            else None,
+        )
+        fields.update(
+            {
+                "model": model,
+                "provider_kind": kind,
+                "provider_id": provider_id,
+                "model_name": model_name,
+            }
+        )
     if "prompt_profile" in fields:
         await _validate_profile(request, fields["prompt_profile"])
     if not fields:
@@ -151,8 +205,22 @@ async def delete_session(request: Request, session_id: str) -> Response:
 
 @router.post("/sessions/{session_id}/model")
 async def switch_model(request: Request, session_id: str, body: ModelSwitch) -> dict[str, Any]:
-    _validate_model(request, body.model)
-    record = await request.app.state.sessions.update(session_id, {"model": body.model})
+    kind, provider_id, model_name, model = await _target(
+        request,
+        provider_kind=body.provider_kind,
+        provider_id=body.provider_id,
+        model_name=body.model_name or body.model,
+        legacy_model=body.model if not (body.provider_kind or body.provider_id) else None,
+    )
+    record = await request.app.state.sessions.update(
+        session_id,
+        {
+            "model": model,
+            "provider_kind": kind,
+            "provider_id": provider_id,
+            "model_name": model_name,
+        },
+    )
     return {"session": record.model_dump()}
 
 
@@ -207,14 +275,34 @@ async def event_citations(request: Request, event_id: str) -> dict[str, Any]:
 # ----- models & providers ----------------------------------------------
 @router.get("/models")
 async def list_models(request: Request) -> dict[str, Any]:
-    config = request.app.state.config
+    service = request.app.state.provider_service
     models = []
-    for model in config.available_models():
-        item = model.model_dump()
-        provider = config.providers.get(model.provider)
-        item["provider_label"] = provider.label if provider else model.provider
+    for entry in service.catalog_models():
+        item = entry.to_api()
+        item.update(
+            {
+                "provider": (
+                    entry.provider_id
+                    if entry.provider_kind == "builtin"
+                    else f"custom:{entry.provider_id}"
+                ),
+                "provider_label": entry.provider_name,
+                "upstream_model": entry.model,
+                "input_modalities": list(entry.capabilities.input_modalities),
+                "context_window": entry.capabilities.context_window,
+                "max_output_tokens": entry.capabilities.max_output_tokens,
+                "supports_streaming": entry.capabilities.supports_streaming,
+                "fallbacks": [],
+            }
+        )
         models.append(item)
-    return {"models": models, "default_model": config.gateway.default_model}
+    defaults = await service.defaults()
+    return {
+        "models": models,
+        "default_model": service.canonical_ref(
+            defaults.provider_kind, defaults.provider_id, defaults.model
+        ),
+    }
 
 
 @router.get("/providers")
@@ -248,18 +336,24 @@ async def list_providers(request: Request) -> dict[str, Any]:
 async def settings(request: Request) -> dict[str, Any]:
     config = request.app.state.config
     prompts = request.app.state.prompts
+    service = request.app.state.provider_service
     profiles = await prompts.list_profiles()
+    defaults = await service.defaults()
     return {
         "version": __version__,
-        "default_model": config.gateway.default_model,
+        "default_model": service.canonical_ref(
+            defaults.provider_kind, defaults.provider_id, defaults.model
+        ),
         "models": [model.model_dump() for model in config.available_models()],
+        "custom_providers": service.provider_api_list(),
+        "provider_defaults": defaults.model_dump(),
         "prompt_profiles": profiles,
         "default_prompt_profile": config.prompts.default_profile,
         "search": request.app.state.search.status(),
         "memory": request.app.state.memory.status().as_dict(),
         "privacy": {
             "local_archive": True,
-            "api_keys": "environment-only; never returned by this API or logged",
+            "api_keys": "custom provider keys encrypted at rest; never returned by API or logged",
             "search_payload": "current query only",
         },
     }
@@ -328,15 +422,15 @@ async def preview_prompt(request: Request, body: PromptPreview) -> dict[str, Any
 # ----- health / reserved extensions ------------------------------------
 @router.get("/health")
 async def health(request: Request) -> dict[str, Any]:
-    config = request.app.state.config
     memory = request.app.state.memory.status().as_dict()
-    available = sum(1 for model in config.available_models() if model.available)
+    catalog = request.app.state.provider_service.catalog_models()
+    available = sum(1 for model in catalog if model.available)
     return {
         "status": "ok",
         "version": __version__,
         "time": iso_now(),
         "archive": {"type": "sqlite", "local": True, "formal_memory_path": True},
-        "models": {"total": len(config.models), "configured": available},
+        "models": {"total": len(catalog), "configured": available},
         "memory": memory,
         "search": request.app.state.search.status(),
     }

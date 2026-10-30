@@ -35,9 +35,12 @@ def _clean_title(text: str, limit: int = 60) -> str:
 
 
 class SessionService:
-    def __init__(self, db: Database, config: AppConfig) -> None:
+    def __init__(
+        self, db: Database, config: AppConfig, provider_service: Any | None = None
+    ) -> None:
         self.db = db
         self.config = config
+        self.provider_service = provider_service
 
     async def ensure(
         self,
@@ -46,6 +49,9 @@ class SessionService:
         title_hint: str,
         model: str | None,
         prompt_profile: str | None,
+        provider_kind: str | None = None,
+        provider_id: str | None = None,
+        model_name: str | None = None,
     ) -> tuple[SessionRecord, bool]:
         if session_id:
             existing = await self.db.get_session(session_id)
@@ -57,6 +63,9 @@ class SessionService:
             id=new_id,
             title=_clean_title(title_hint),
             model=model or self.config.gateway.default_model,
+            provider_kind=provider_kind,
+            provider_id=provider_id,
+            model_name=model_name,
             prompt_profile=prompt_profile or self.config.prompts.default_profile,
             created_at=now,
             updated_at=now,
@@ -77,18 +86,35 @@ class SessionService:
             raise NotFoundError(ErrorCode.SESSION_NOT_FOUND, "Session not found")
         return record
 
+    async def availability(self, session: SessionRecord) -> tuple[bool, str | None]:
+        if not self.provider_service:
+            return True, None
+        return await self.provider_service.session_availability(session)
+
     async def detail(self, session_id: str) -> dict[str, Any]:
         session = await self.get(session_id)
         messages = await self.db.list_messages(session_id, limit=1000)
         citations = await self.db.get_session_citations(session_id)
+        available, reason = await self.availability(session)
         return {
             "session": session.model_dump(),
+            "providerAvailable": available,
+            "providerUnavailableReason": reason,
             "messages": [message.model_dump() for message in messages],
             "citations": citations,
         }
 
     async def list(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
-        return await self.db.list_sessions(limit=limit, offset=offset)
+        items = await self.db.list_sessions(limit=limit, offset=offset)
+        for item in items:
+            try:
+                record = SessionRecord.model_validate(item)
+            except Exception:
+                continue
+            available, reason = await self.availability(record)
+            item["providerAvailable"] = available
+            item["providerUnavailableReason"] = reason
+        return items
 
     async def update(self, session_id: str, fields: dict[str, Any]) -> SessionRecord:
         await self.get(session_id)

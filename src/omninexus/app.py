@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from omninexus import __version__
+from omninexus.api.provider_routes import router as provider_router
 from omninexus.api.routes import router
 from omninexus.config import AppConfig, load_config
 from omninexus.errors import ErrorCode, OmniError
@@ -27,6 +28,9 @@ from omninexus.logging import configure_logging, get_logger
 from omninexus.memory.plugin import MemoryPlugin, build_memory_plugin
 from omninexus.orchestrator import Orchestrator
 from omninexus.prompts.manager import PromptManager
+from omninexus.providers.secrets import SecretBox
+from omninexus.providers.service import ProviderService
+from omninexus.providers.store import CustomProviderStore
 from omninexus.search.service import SearchService
 from omninexus.sessions.service import SessionService
 from omninexus.storage.database import Database
@@ -64,9 +68,16 @@ def create_app(
     configure_logging(config)
 
     db = Database(config.storage.db_path)
-    gateway = Gateway(config, transport=transport)
+    secret_box = SecretBox.load(config.resolve_data_dir())
+    provider_store = CustomProviderStore(db, secret_box)
+    provider_service = ProviderService(config, provider_store)
+    gateway = Gateway(
+        config,
+        transport=transport,
+        provider_service=provider_service,
+    )
     prompts = PromptManager(db, config.prompts)
-    sessions = SessionService(db, config)
+    sessions = SessionService(db, config, provider_service)
     memory = memory_plugin or build_memory_plugin(config.memory, transport=transport)
     search = SearchService(config.search, transport=search_transport or transport)
     orchestrator = Orchestrator(
@@ -77,12 +88,15 @@ def create_app(
         sessions=sessions,
         memory=memory,
         search=search,
+        provider_service=provider_service,
     )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await db.initialize()
         await prompts.initialize()
+        await provider_service.reload()
+        await gateway.refresh_custom_providers()
         if config.server.host not in {"127.0.0.1", "localhost", "::1"}:
             log.warning(
                 "server binds to a non-loopback address without built-in authentication; "
@@ -116,6 +130,10 @@ def create_app(
     app.state.config = config
     app.state.db = db
     app.state.gateway = gateway
+    app.state.provider_store = provider_store
+    app.state.provider_service = provider_service
+    app.state.provider_secrets = secret_box
+    app.state.provider_transport = transport
     app.state.prompts = prompts
     app.state.sessions = sessions
     app.state.memory = memory
@@ -160,7 +178,7 @@ def create_app(
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
-        if request.url.path == "/":
+        if request.url.path in {"/", "/settings"}:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; img-src 'self' data:; "
                 "style-src 'self' 'unsafe-inline'; script-src 'self'; "
@@ -218,10 +236,15 @@ def create_app(
         )
 
     app.include_router(router)
+    app.include_router(provider_router)
 
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
         return FileResponse(_STATIC / "index.html")
+
+    @app.get("/settings", include_in_schema=False)
+    async def settings_page() -> FileResponse:
+        return FileResponse(_STATIC / "settings.html")
 
     @app.get("/favicon.svg", include_in_schema=False)
     async def favicon() -> FileResponse:

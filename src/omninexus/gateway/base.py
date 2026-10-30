@@ -121,17 +121,23 @@ class BaseProvider(ABC):
         *,
         gateway: GatewayConfig,
         transport: httpx.AsyncBaseTransport | None = None,
+        api_key_override: str | None = None,
     ) -> None:
         self.name = name
         self.config = config
         self.gateway = gateway
         self._transport = transport
+        self._api_key_override = api_key_override
         self._client: httpx.AsyncClient | None = None
         if config.api_key_env:
             register_secret(config.api_key())
+        if api_key_override:
+            register_secret(api_key_override)
 
     @property
     def api_key(self) -> str | None:
+        if self._api_key_override is not None:
+            return self._api_key_override
         key = self.config.api_key()
         register_secret(key)
         return key

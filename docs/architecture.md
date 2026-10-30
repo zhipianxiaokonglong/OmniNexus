@@ -4,7 +4,8 @@
 
 1. **独立可运行**：只依赖 Python 与公开 PyPI 包，不依赖上游多模态模块或下游表达模块。
 2. **本地优先**：对话、提示词、引用、标签默认只写本机 SQLite；不引入云端数据库或遥测。
-3. **BYOK**：密钥只从环境变量读取，不进入 HTTP 请求、数据库、日志或仓库。
+3. **BYOK**：内置厂商密钥只从环境变量读取；自定义提供方 Key 经本机加密落库，不进入日志/导出；
+   两者都不提交到仓库。
 4. **契约稳定**：下游事件、记忆查询 JSON、提示词接口均按版本冻结；内部实现可替换。
 5. **故障隔离**：任一增强能力（搜索、保留记忆、某个厂商）失效时，主对话链路仍可完成。
 
@@ -203,7 +204,31 @@ prompt_versions(id, profile_id→prompt_profiles, version, system_template,
 | 保留记忆接口但不接入 | v1.1 明确取消协作；存档 + 最近窗口是正式路径，插件保留供未来使用 |
 | 本地无认证 | 默认只监听回环地址；对外部署必须加外层认证 |
 
-## 10. 扩展点
+## 10. 自定义提供方（v1.2）
+
+```text
+Settings UI
+  → /v1/custom-providers (CRUD, masked key)
+  → SQLite custom_providers + custom_models
+  → ProviderService catalog snapshot
+  → Gateway custom:<uuid> dynamic OpenAI provider
+  → /chat/completions (stream or non-stream)
+```
+
+- **存储**：`custom_providers` 保存名称、Base URL、加密 Key、掩码、请求头、协议、超时、启用状态；
+  `custom_models` 保存模型名、能力 JSON、验证状态、最近测试。
+- **密钥**：`SecretBox` 使用 `data/provider-secrets.key`（或 `OMNI_PROVIDER_SECRET`）AES-GCM
+  加密；AAD 绑定 provider UUID。前端/接口只返回掩码。
+- **运行时**：`ProviderService` 合并内置模型与自定义模型；自定义模型 canonical ref 为
+  `custom:<provider_uuid>:<model>`，网关按需构建 OpenAI-compatible 适配器。
+- **默认设置**：`app_settings` 保存默认 `providerKind/providerId/model`；新会话使用，历史会话保持。
+- **能力**：自定义模型声明 `inputModalities/contextWindow/maxOutputTokens`；图片输入优先在同一
+  提供方内路由视觉模型，否则文本化降级。自定义提供方失败不跨 provider 静默回退。
+- **不可用**：提供方删除/禁用后历史会话保留，详情返回 `providerAvailable=false`，聊天返回
+  `PROVIDER_UNAVAILABLE`；迁移只通过显式向导执行。
+- **测试**：三级（地址、`/models`、最小聊天）+ 可选多模态探测，状态持久化到模型验证字段。
+
+## 11. 扩展点
 
 - **新厂商**：在 `providers` 中增加 OpenAI-compatible 配置，或实现 `BaseProvider`。
 - **新模型**：在 `models` 中增加条目与 `fallbacks`；无需改代码。

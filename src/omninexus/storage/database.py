@@ -27,7 +27,7 @@ from omninexus.logging import get_logger
 log = get_logger("storage")
 T = TypeVar("T")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     model TEXT,
+    provider_kind TEXT,
+    provider_id TEXT,
+    model_name TEXT,
     prompt_profile TEXT,
     web_search INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
@@ -95,6 +98,42 @@ CREATE TABLE IF NOT EXISTS prompt_versions (
     created_at TEXT NOT NULL,
     UNIQUE(profile_id, version)
 );
+
+CREATE TABLE IF NOT EXISTS custom_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    base_url TEXT NOT NULL,
+    api_key_ciphertext TEXT,
+    api_key_masked TEXT,
+    headers_json TEXT NOT NULL DEFAULT '{}',
+    protocol TEXT NOT NULL DEFAULT 'openai-compatible',
+    timeout_seconds INTEGER NOT NULL DEFAULT 10,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    default_model TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS custom_models (
+    id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL REFERENCES custom_providers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    capabilities_json TEXT NOT NULL DEFAULT '{}',
+    verification TEXT NOT NULL DEFAULT 'unverified',
+    last_tested_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(provider_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_custom_models_provider
+    ON custom_models(provider_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -118,6 +157,15 @@ class Database:
             try:
                 conn.execute("PRAGMA journal_mode = WAL")
                 conn.executescript(_SCHEMA)
+                # v1 -> v2: additive session provider columns.
+                for column, ddl in (
+                    ("provider_kind", "TEXT"),
+                    ("provider_id", "TEXT"),
+                    ("model_name", "TEXT"),
+                ):
+                    existing = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
+                    if column not in existing:
+                        conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {ddl}")
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('version', ?)",
                     (str(SCHEMA_VERSION),),
@@ -181,13 +229,17 @@ class Database:
     # ----- sessions -----------------------------------------------------
     async def create_session(self, session: SessionRecord) -> None:
         await self.execute(
-            """INSERT INTO sessions(id, title, model, prompt_profile, web_search,
+            """INSERT INTO sessions(id, title, model, provider_kind, provider_id,
+                                   model_name, prompt_profile, web_search,
                                    created_at, updated_at, metadata)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.id,
                 session.title,
                 session.model,
+                session.provider_kind,
+                session.provider_id,
+                session.model_name,
                 session.prompt_profile,
                 1 if session.web_search else 0,
                 session.created_at,
@@ -220,7 +272,17 @@ class Database:
         return result
 
     async def update_session(self, session_id: str, fields: dict[str, Any]) -> bool:
-        allowed = {"title", "model", "prompt_profile", "web_search", "updated_at", "metadata"}
+        allowed = {
+            "title",
+            "model",
+            "provider_kind",
+            "provider_id",
+            "model_name",
+            "prompt_profile",
+            "web_search",
+            "updated_at",
+            "metadata",
+        }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
             return False
@@ -353,6 +415,9 @@ def _row_to_session(row: sqlite3.Row) -> SessionRecord:
         id=row["id"],
         title=row["title"],
         model=row["model"],
+        provider_kind=row["provider_kind"],
+        provider_id=row["provider_id"],
+        model_name=row["model_name"],
         prompt_profile=row["prompt_profile"],
         web_search=bool(row["web_search"]),
         created_at=row["created_at"],

@@ -28,7 +28,10 @@ Base URL：`http://127.0.0.1:8000`。交互式 OpenAPI：`/docs`，原始 schema
     }
   ],
   "metadata": {
-    "model": "openai:gpt-4o-mini",
+    "providerKind": "custom",
+    "providerId": "a1b2c3d4-…",
+    "modelName": "gpt-4o-mini",
+    "model": "custom:a1b2c3d4-…:gpt-4o-mini",
     "prompt_profile": "default",
     "web_search": false,
     "locale": "zh-CN"
@@ -44,7 +47,10 @@ Base URL：`http://127.0.0.1:8000`。交互式 OpenAPI：`/docs`，原始 schema
 | `parts[].modality` | 是 | `text` / `image` / `audio` / `file` / `video`；未知值按不支持处理 |
 | `parts[].content` | 是 | 文本，或图片 data URL / http(s) URL；单片段 ≤ 12,000,000 字符 |
 | `parts[].metadata` | 否 | 白名单辅助信息；`api_key/token/authorization/secret/password` 等键会被丢弃 |
-| `metadata.model` | 否 | 本轮模型 ID；不持久化为会话模型 |
+| `metadata.providerKind` | 否 | `builtin` / `custom`；与 `providerId`、`modelName` 一起使用 |
+| `metadata.providerId` | 否 | 内置 provider key 或自定义提供方 UUID |
+| `metadata.modelName` | 否 | 上游模型名（自定义提供方为模型名，不是完整 ref） |
+| `metadata.model` | 否 | 兼容旧调用的 canonical ref；新调用建议用上面三个字段 |
 | `metadata.prompt_profile` | 否 | 本轮提示词配置 ID；显式不存在返回 404 |
 | `metadata.web_search` | 否 | 本轮是否启用搜索；默认取会话设置 |
 | `metadata.locale` | 否 | 模板变量与展示区域；最长 32 字符 |
@@ -230,7 +236,7 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 | GET | `/v1/sessions/{id}` | 会话 + 消息 + 引用 |
 | PATCH | `/v1/sessions/{id}` | 更新标题/模型/提示词/搜索开关 |
 | DELETE | `/v1/sessions/{id}` | 级联删除消息与引用，204 |
-| POST | `/v1/sessions/{id}/model` | `{ "model": "beta:one" }`，切换并持久化，上下文保留 |
+| POST | `/v1/sessions/{id}/model` | `{providerKind, providerId, modelName, model}`；切换并持久化，上下文保留 |
 | POST | `/v1/sessions/{id}/prompt` | `{ "profile_id": "…" }` |
 | GET | `/v1/sessions/{id}/export?format=json\|md` | 下载完整存档 |
 | GET | `/v1/sessions/{id}/citations` | 会话全部引用 |
@@ -244,14 +250,85 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/v1/models` | 注册表、能力、是否已配置、回退链 |
+| GET | `/v1/models` | 内置 + 自定义模型、能力、providerKind/Id、验证状态、是否可用 |
 | GET | `/v1/providers` | 厂商 Base URL、环境变量名、是否已配置；**不返回密钥值** |
 | GET | `/v1/settings` | 页面初始化所需的模型/提示词/搜索/隐私摘要 |
 | GET | `/v1/health` | 应用、存档、配置模型数、保留记忆与搜索状态 |
 | GET | `/v1/healthz` | 轻量存活探针 |
 
-`available=true` 表示**厂商已配置**（密钥存在/本地 provider 已启用），不保证网络可达；实际不可达
-会在请求时触发回退。
+`available=true` 表示**厂商已配置/自定义提供方已启用**，不保证网络可达；实际不可达会在请求时返回
+可读错误（自定义提供方不跨提供方静默回退）。
+
+### 7.1 自定义提供方
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/v1/custom-providers` | 列表；Key 仅掩码 |
+| POST | `/v1/custom-providers` | 新建 |
+| GET | `/v1/custom-providers/{id}` | 详情 |
+| PUT | `/v1/custom-providers/{id}` | 更新；`apiKey` 省略=不改，`clearApiKey=true`=清除 |
+| DELETE | `/v1/custom-providers/{id}?confirm=true` | 删除；默认/使用中需确认 |
+| PATCH | `/v1/custom-providers/{id}/enabled` | 启用/禁用 |
+| POST | `/v1/custom-providers/test` | 未保存配置测试（可带 `id` 复用已保存 Key） |
+| POST | `/v1/custom-providers/{id}/test` | 已保存配置测试 |
+| POST | `/v1/custom-providers/discover-models` | 拉取未保存配置的 `/models` |
+| POST | `/v1/custom-providers/{id}/discover-models` | 拉取已保存配置的 `/models` |
+| GET/PUT | `/v1/provider-defaults` | 默认提供方/模型 |
+| GET | `/v1/provider-config/export` | 导出（**不含 Key**） |
+| POST | `/v1/provider-config/import` | 导入（无 Key，默认禁用） |
+| GET | `/v1/provider-migration/candidates` | 不可用提供方的历史会话 |
+| POST | `/v1/provider-migration/apply` | 手动迁移选中会话 |
+
+创建请求：
+
+```json
+{
+  "name": "我的中转",
+  "baseUrl": "https://api.example.com/v1",
+  "apiKey": "sk-…",
+  "headers": {"X-Title": "OmniNexus"},
+  "protocol": "openai-compatible",
+  "timeoutSeconds": 10,
+  "enabled": true,
+  "models": [
+    {
+      "name": "gpt-4o-mini",
+      "label": "GPT-4o mini",
+      "capabilities": {
+        "inputModalities": ["text", "image"],
+        "contextWindow": 128000,
+        "maxOutputTokens": 2048,
+        "supportsStreaming": true
+      }
+    }
+  ],
+  "defaultModel": "gpt-4o-mini"
+}
+```
+
+响应**不返回 `apiKey`**，返回 `apiKeyMasked`（如 `sk-****abcd`）与 `hasApiKey`。请求头禁止
+`Authorization` / `x-api-key`，鉴权统一走 Key 字段。
+
+测试结果：
+
+```json
+{
+  "status": "success",
+  "message": "连接成功，模型可用。",
+  "levels": [
+    {"level": "reachability", "status": "ok", "latencyMs": 42},
+    {"level": "models", "status": "ok", "modelCount": 12},
+    {"level": "model", "status": "ok", "latencyMs": 380}
+  ],
+  "multimodal": {"status": "verified"}
+}
+```
+
+`status`：`success` / `unverified` / `auth_failed` / `unreachable` / `model_not_found` / `timeout`。
+`unverified` 允许保存；`/models` 不可用时允许手动填写模型。
+
+Base URL **严格拼接**：`base.rstrip("/") + "/models"`、`+ "/chat/completions"`，不自动补 `/v1`。
+保存时拒绝包含 `/models` 或 `/chat/completions` 的地址。
 
 ## 8. 提示词接口
 
@@ -290,6 +367,19 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 | `PROMPT_BUILTIN_PROTECTED` | 409 | 内置配置不可删除 |
 | `PROMPT_INVALID` | 422 | 模板非法/超长/名称重复 |
 | `UNKNOWN_MODEL` | 404 | 模型 ID 不在注册表 |
+| `PROVIDER_UNAVAILABLE` | 409 | 提供方已删除/禁用/未配置，请重新选择 |
+| `PROVIDER_IN_USE` | 409 | 提供方被会话引用，删除需确认 |
+| `DEFAULT_PROVIDER_REQUIRED` | 409 | 默认提供方需先切换 |
+| `CUSTOM_PROVIDER_NOT_FOUND` | 404 | 自定义提供方不存在 |
+| `CUSTOM_PROVIDER_EXISTS` | 409 | 名称重复 |
+| `CUSTOM_MODEL_NOT_FOUND` | 404 | 自定义模型不存在 |
+| `UNSUPPORTED_PROTOCOL` | 422 | 仅支持 OpenAI 兼容协议 |
+| `SECRET_STORE_ERROR` | 500 | 主密钥缺失/损坏/无法解密 |
+| `CONFIG_IMPORT_INVALID` | 422 | 导入配置格式错误 |
+| `PROVIDER_TEST_AUTH_FAILED` | 401 | 测试时鉴权失败 |
+| `PROVIDER_TEST_UNREACHABLE` | 502 | 测试时地址不可达 |
+| `PROVIDER_TEST_MODEL_NOT_FOUND` | 404 | 测试模型不存在 |
+| `PROVIDER_TEST_TIMEOUT` | 504 | 测试超时 |
 | `NO_PROVIDER_AVAILABLE` | 503 | 无任何已配置模型 |
 | `PROVIDER_AUTH` | 502 | 厂商鉴权失败（密钥问题） |
 | `PROVIDER_RATE_LIMITED` | 429/503 | 厂商或本地令牌桶限流 |

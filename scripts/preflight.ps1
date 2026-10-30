@@ -20,7 +20,7 @@ Write-Host "== pytest =="
 if ($LASTEXITCODE -ne 0) { $failed = $true }
 
 Write-Host "== forbidden local artifacts =="
-$artifacts = Get-ChildItem -Recurse -Force -File -Include *.db, *.db-wal, *.db-shm, *.log, *.jsonl, .env -ErrorAction SilentlyContinue |
+$artifacts = Get-ChildItem -Recurse -Force -File -Include *.db, *.db-wal, *.db-shm, *.log, *.jsonl, .env, provider-secrets.key -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -notmatch "\\\.venv\\" }
 if ($artifacts) {
     $artifacts | ForEach-Object { Write-Host "UNEXPECTED: $($_.FullName)" }

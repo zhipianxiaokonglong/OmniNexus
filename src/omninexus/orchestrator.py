@@ -33,6 +33,7 @@ from omninexus.gateway.router import Gateway, GenerationInterruptedError, RouteP
 from omninexus.logging import get_logger
 from omninexus.memory.plugin import MemoryPlugin, MemoryQueryResult
 from omninexus.prompts.manager import PromptManager
+from omninexus.providers.service import ProviderService
 from omninexus.search.service import SearchOutcome, SearchService
 from omninexus.sessions.service import (
     ContextBuilder,
@@ -92,8 +93,10 @@ class Orchestrator:
         sessions: SessionService,
         memory: MemoryPlugin,
         search: SearchService,
+        provider_service: ProviderService,
     ) -> None:
         self.config = config
+        self.providers = provider_service
         self.db = db
         self.gateway = gateway
         self.prompts = prompts
@@ -139,23 +142,64 @@ class Orchestrator:
             return self._replay_turn(normalized, session, replay)
 
         text = normalized.text.strip()
-        session, _ = await self.sessions.ensure(
+        session, created = await self.sessions.ensure(
             normalized.session_id,
             title_hint=text[:60] if text else "Image conversation",
             model=None,
             prompt_profile=None,
         )
 
-        requested_model = str(
-            metadata.get("model") or session.model or self.config.gateway.default_model
-        )
-        model_config = self.config.model_config_by_id(requested_model)
-        if not model_config:
+        defaults = await self.providers.defaults()
+        kind, provider_id, model_name, explicit = self._select_model(metadata, session, defaults)
+        requested_model = self.providers.canonical_ref(kind, provider_id, model_name)
+        if not created and not explicit:
+            available, reason = await self.providers.session_availability(session)
+            if not available:
+                raise OmniError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    "当前会话使用的提供方不可用，请重新选择提供方和模型。",
+                    status_code=409,
+                    details={"reason": reason},
+                )
+        if kind == "custom":
+            snapshot = self.providers.get_custom(provider_id)
+            if not snapshot or not snapshot.provider.enabled:
+                raise OmniError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    "提供方已禁用或删除，请在聊天页重新选择。",
+                    status_code=409,
+                    details={"providerId": provider_id},
+                )
+            if not any(model.name == model_name for model in snapshot.provider.models):
+                raise OmniError(
+                    ErrorCode.MODEL_UNAVAILABLE,
+                    "模型已删除，请重新选择模型。",
+                    status_code=409,
+                    details={"model": model_name},
+                )
+        elif not self.config.model_config_by_id(requested_model):
             raise OmniError(
                 ErrorCode.UNKNOWN_MODEL,
                 "Unknown model id.",
                 status_code=404,
                 details={"model": requested_model},
+            )
+
+        if (
+            created
+            or explicit
+            or session.provider_kind != kind
+            or session.provider_id != provider_id
+            or session.model_name != model_name
+        ):
+            session = await self.sessions.update(
+                session.id,
+                {
+                    "model": requested_model,
+                    "provider_kind": kind,
+                    "provider_id": provider_id,
+                    "model_name": model_name,
+                },
             )
 
         explicit_profile = metadata.get("prompt_profile")
@@ -219,7 +263,7 @@ class Orchestrator:
             memory_items=memory_result.items,
         )
 
-        max_tokens = min(model_config.max_output_tokens, self.config.gateway.max_output_tokens)
+        max_tokens = min(plan.primary.max_output_tokens, self.config.gateway.max_output_tokens)
         budget = context_budget(self.config, plan.primary.context_window, max_tokens)
         built = self.context.build(
             system_prompt=system_prompt,
@@ -242,6 +286,37 @@ class Orchestrator:
             temperature=self.config.gateway.temperature,
             top_p=self.config.gateway.top_p,
             dropped_messages=built.dropped_messages,
+        )
+
+    def _select_model(
+        self,
+        metadata: dict[str, Any],
+        session: SessionRecord,
+        defaults: Any,
+    ) -> tuple[str, str, str, bool]:
+        explicit_kind = metadata.get("providerKind")
+        explicit_provider = metadata.get("providerId")
+        explicit_model = metadata.get("modelName") or metadata.get("model")
+        if explicit_kind or explicit_provider:
+            kind = str(explicit_kind or "custom")
+            if kind not in {"builtin", "custom"}:
+                raise InvalidInputError("不支持的提供方类型。")
+            if not explicit_provider or not explicit_model:
+                raise InvalidInputError("必须同时提供 providerId 和 model。")
+            return kind, str(explicit_provider), str(explicit_model), True
+        if metadata.get("model"):
+            kind, provider_id, model_name = self.providers.resolve_ref(str(metadata["model"]))
+            return kind, provider_id, model_name, True
+        if session.provider_kind and session.provider_id and session.model_name:
+            return session.provider_kind, session.provider_id, session.model_name, False
+        if session.model:
+            kind, provider_id, model_name = self.providers.resolve_ref(session.model)
+            return kind, provider_id, model_name, False
+        return (
+            defaults.provider_kind,
+            defaults.provider_id,
+            defaults.model,
+            False,
         )
 
     def _replay_turn(

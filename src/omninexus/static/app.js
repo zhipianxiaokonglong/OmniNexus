@@ -15,8 +15,10 @@ const state = {
   session: null,
   messages: [],
   models: [],
+  providers: [],
   profiles: [],
   settings: null,
+  currentProvider: null,
   currentModel: null,
   currentPrompt: "default",
   webSearch: false,
@@ -83,79 +85,142 @@ function shortDate(value) {
   return date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
 }
 
+function providerKey(kind, id) {
+  return `${kind}:${id}`;
+}
+
+function providerOf(model) {
+  return { kind: model.providerKind, id: model.providerId, name: model.provider_label || model.provider };
+}
+
 function activeModel() {
   return state.models.find((item) => item.id === state.currentModel) || null;
 }
 
+function activeProvider() {
+  return state.providers.find(
+    (item) => item.kind === state.currentProvider?.kind && item.id === state.currentProvider?.id,
+  ) || null;
+}
+
 function updateComposerHint() {
   const model = activeModel();
+  const provider = activeProvider();
   if (!state.models.length) {
     $("composer-hint").textContent = "未加载模型";
     return;
   }
-  if (!model) {
-    $("composer-hint").textContent = "未选择模型";
+  if (!model || !provider) {
+    $("composer-hint").textContent = "未选择提供方或模型";
     return;
   }
   if (!model.available) {
-    $("composer-hint").textContent = "所选模型未配置密钥";
+    $("composer-hint").textContent = "所选提供方不可用";
     return;
   }
   const caps = model.input_modalities?.includes("image") ? "文本 + 图像" : "文本";
-  $("composer-hint").textContent = `${model.provider_label || model.provider} · ${caps}`;
+  const verified = model.verification && model.verification !== "unverified"
+    ? " · 已验证" : " · 未验证";
+  $("composer-hint").textContent = `${provider.name} · ${caps}${verified}`;
 }
 
 async function loadSettings() {
-  const data = await api("/v1/settings");
+  const [data, modelData, defaultsData] = await Promise.all([
+    api("/v1/settings"),
+    api("/v1/models"),
+    api("/v1/provider-defaults"),
+  ]);
   state.settings = data;
-  state.models = data.models || [];
+  state.models = modelData.models || [];
   state.profiles = data.prompt_profiles || [];
-  if (!state.currentModel || !state.models.some((item) => item.id === state.currentModel)) {
-    const preferred = state.models.find((item) => item.id === data.default_model && item.available)
-      || state.models.find((item) => item.available)
-      || state.models.find((item) => item.id === data.default_model)
-      || state.models[0];
+  const providerMap = new Map();
+  for (const model of state.models) {
+    if (!model.providerKind || !model.providerId) continue;
+    const key = providerKey(model.providerKind, model.providerId);
+    if (!providerMap.has(key)) {
+      providerMap.set(key, {
+        ...providerOf(model),
+        models: [],
+      });
+    }
+    providerMap.get(key).models.push(model);
+  }
+  state.providers = [...providerMap.values()];
+  const defaultProvider = defaultsData.defaults || {};
+  if (!state.currentProvider || !state.providers.some(
+    (item) => item.kind === state.currentProvider.kind && item.id === state.currentProvider.id,
+  )) {
+    state.currentProvider = state.providers.find(
+      (item) => item.kind === defaultProvider.providerKind && item.id === defaultProvider.providerId,
+    ) || state.providers.find((item) => item.models.some((m) => m.available))
+      || state.providers[0] || null;
+  }
+  const providerModels = state.providers.find(
+    (item) => item.kind === state.currentProvider?.kind && item.id === state.currentProvider?.id,
+  )?.models || [];
+  if (!providerModels.some((model) => model.id === state.currentModel)) {
+    const preferred = providerModels.find((model) => model.model === defaultProvider.model && model.available)
+      || providerModels.find((model) => model.available)
+      || providerModels[0];
     state.currentModel = preferred?.id || null;
   }
   if (!state.profiles.some((item) => item.id === state.currentPrompt)) {
     state.currentPrompt = data.default_prompt_profile || "default";
   }
+  renderProviderOptions();
   renderModelOptions();
   renderPromptOptions();
   updateSearchAvailability();
   updateComposerHint();
 }
 
-function renderModelOptions() {
-  const select = $("model-select");
+function renderProviderOptions() {
+  const select = $("provider-select");
   select.innerHTML = "";
-  if (!state.models.length) {
+  if (!state.providers.length) {
     const option = document.createElement("option");
-    option.textContent = "无可用模型";
+    option.textContent = "无可用提供方";
     option.value = "";
     select.appendChild(option);
     select.disabled = true;
     return;
   }
   select.disabled = false;
-  const groups = new Map();
-  for (const model of state.models) {
-    const key = model.provider_label || model.provider;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(model);
+  for (const provider of state.providers) {
+    const option = document.createElement("option");
+    option.value = providerKey(provider.kind, provider.id);
+    option.textContent = `${provider.name}${provider.kind === "builtin" ? " · 内置" : ""}`;
+    option.selected = provider.kind === state.currentProvider?.kind
+      && provider.id === state.currentProvider?.id;
+    option.disabled = !provider.models.some((model) => model.available);
+    select.appendChild(option);
   }
-  for (const [label, models] of groups) {
-    const group = document.createElement("optgroup");
-    group.label = label;
-    for (const model of models) {
-      const option = document.createElement("option");
-      option.value = model.id;
-      option.textContent = `${model.label}${model.available ? "" : "（未配置）"}`;
-      option.disabled = !model.available;
-      option.selected = model.id === state.currentModel;
-      group.appendChild(option);
-    }
-    select.appendChild(group);
+}
+
+function renderModelOptions() {
+  const select = $("model-select");
+  select.innerHTML = "";
+  const provider = activeProvider();
+  const models = provider?.models || [];
+  if (!models.length) {
+    const option = document.createElement("option");
+    option.textContent = "请选择提供方";
+    option.value = "";
+    select.appendChild(option);
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  for (const model of models) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = `${model.label}${model.available ? "" : "（不可用）"}${
+      model.verification === "vision_verified" ? " · 视觉已验证"
+      : model.verification === "unverified" ? " · 未验证" : ""
+    }`;
+    option.disabled = !model.available;
+    option.selected = model.id === state.currentModel;
+    select.appendChild(option);
   }
   if (select.value !== state.currentModel) {
     const selected = Array.from(select.options).find((option) => option.value === state.currentModel);
@@ -202,7 +267,9 @@ async function loadSessions() {
       title.textContent = session.title || "未命名对话";
       const meta = document.createElement("span");
       meta.className = "s-meta";
-      meta.textContent = `${session.message_count || 0} 条 · ${shortDate(session.updated_at)}`;
+      meta.textContent = `${session.message_count || 0} 条 · ${shortDate(session.updated_at)}${
+        session.providerAvailable === false ? " · 提供方不可用" : ""
+      }`;
       button.append(title, meta);
       button.addEventListener("click", () => openSession(session.id));
       list.appendChild(button);
@@ -227,9 +294,10 @@ async function openSession(sessionId) {
       ),
       pending: false,
     }));
-    state.currentModel = data.session.model || state.currentModel;
+    applySessionSelection(data.session);
     state.currentPrompt = data.session.prompt_profile || state.currentPrompt;
     state.webSearch = Boolean(data.session.web_search);
+    renderProviderOptions();
     renderModelOptions();
     renderPromptOptions();
     updateSearchAvailability();
@@ -258,26 +326,55 @@ function renderSessionsActive() {
   document.querySelectorAll(".session-item").forEach((item) => item.classList.remove("active"));
 }
 
+function applySessionSelection(session) {
+  state.currentModel = session.model || state.currentModel;
+  if (session.provider_kind && session.provider_id) {
+    state.currentProvider = { kind: session.provider_kind, id: session.provider_id };
+  } else if (session.model?.startsWith("custom:")) {
+    const parts = session.model.split(":", 3);
+    state.currentProvider = { kind: "custom", id: parts[1] };
+    state.currentModel = session.model;
+  } else if (session.model?.includes(":")) {
+    state.currentProvider = { kind: "builtin", id: session.model.split(":", 1)[0] };
+  }
+}
+
 function updateSessionHeader() {
   $("session-title").textContent = state.session?.title || "新对话";
   const hasSession = Boolean(state.session);
   $("export-session").disabled = !hasSession;
   $("delete-session").disabled = !hasSession;
+  const unavailable = hasSession && state.session.providerAvailable === false;
+  $("provider-banner").hidden = !unavailable;
+  if (unavailable) {
+    const reasons = {
+      provider_deleted: "提供方已删除",
+      provider_disabled: "提供方已禁用",
+      provider_not_configured: "提供方未配置",
+      model_deleted: "模型已删除",
+    };
+    $("provider-banner-text").textContent =
+      `当前会话使用的${reasons[state.session.providerUnavailableReason] || "提供方"}，请重新选择提供方和模型后继续。`;
+  }
 }
 
 async function ensureSession() {
   if (state.session) return state.session;
   const model = state.currentModel || state.settings?.default_model;
-  if (!model) throw new Error("没有可用模型。请先在 .env 配置厂商密钥。");
+  if (!model) throw new Error("没有可用模型。请先在设置中添加提供方并启用模型。");
   const data = await api("/v1/sessions", {
     method: "POST",
     body: JSON.stringify({
+      providerKind: state.currentProvider?.kind,
+      providerId: state.currentProvider?.id,
+      modelName: activeModel()?.model || model.split(":").slice(-1)[0],
       model,
       prompt_profile: state.currentPrompt,
       web_search: state.webSearch,
     }),
   });
   state.session = data.session;
+  applySessionSelection(data.session);
   updateSessionHeader();
   await loadSessions();
   return state.session;
@@ -463,6 +560,9 @@ async function sendMessage(event) {
     session_id: session.id,
     parts,
     metadata: {
+      providerKind: state.currentProvider?.kind,
+      providerId: state.currentProvider?.id,
+      modelName: activeModel()?.model,
       model: state.currentModel,
       prompt_profile: state.currentPrompt,
       web_search: state.webSearch,
@@ -720,44 +820,8 @@ async function deletePromptProfile() {
 }
 
 /* ---------------- providers / health ---------------- */
-async function openProviders() {
-  $("providers-modal").hidden = false;
-  try {
-    const data = await api("/v1/providers");
-    const list = $("provider-list");
-    list.innerHTML = "";
-    for (const provider of data.providers || []) {
-      const card = document.createElement("div");
-      card.className = "provider";
-      const head = document.createElement("div");
-      head.className = "p-head";
-      const name = document.createElement("strong");
-      name.textContent = provider.label;
-      const badge = document.createElement("span");
-      badge.className = `badge ${provider.configured ? "ok" : "off"}`;
-      badge.textContent = provider.configured ? "已配置" : provider.requires_key ? "缺密钥" : "未启用";
-      head.append(name, badge);
-      const detail = document.createElement("div");
-      detail.className = "p-detail";
-      const env = provider.requires_key ? `环境变量：${provider.api_key_env || "—"}` : "本地 / 无需密钥";
-      detail.textContent = `${provider.type} · ${provider.base_url || "local"}\n${env}`;
-      card.append(head, detail);
-      list.appendChild(card);
-    }
-  } catch (error) {
-    toast(error.message, true);
-  }
-  try {
-    const data = await api("/v1/memory/status");
-    const memory = data.memory;
-    $("memory-status").textContent = [
-      `state: ${memory.state}`,
-      `configured: ${memory.configured}`,
-      `reason: ${memory.reason || "—"}`,
-      `contract: ${memory.contract?.version || "1.0"} (Reserved)`,
-      memory.base_url ? `base_url: ${memory.base_url}` : "base_url: —",
-    ].join("\n");
-  } catch { $("memory-status").textContent = "unavailable"; }
+function openProviders() {
+  window.location.href = "/settings";
 }
 
 async function refreshHealth() {
@@ -773,6 +837,28 @@ async function refreshHealth() {
   } catch {
     $("status-dot").className = "dot bad";
     $("status-text").textContent = "服务不可达";
+  }
+}
+
+async function switchSessionTarget() {
+  if (!state.session || !state.currentProvider || !state.currentModel) return;
+  const model = activeModel();
+  if (!model) return;
+  try {
+    const data = await api(`/v1/sessions/${state.session.id}/model`, {
+      method: "POST",
+      body: JSON.stringify({
+        providerKind: state.currentProvider.kind,
+        providerId: state.currentProvider.id,
+        modelName: model.model,
+        model: state.currentModel,
+      }),
+    });
+    state.session = data.session;
+    updateSessionHeader();
+    toast(`已切换到 ${activeProvider()?.name || ""} / ${model.label}，上下文保留`);
+  } catch (error) {
+    toast(error.message, true);
   }
 }
 
@@ -808,17 +894,25 @@ function bindEvents() {
       toast("对话已删除");
     } catch (error) { toast(error.message, true); }
   });
+  $("provider-select").addEventListener("change", async (event) => {
+    const value = event.target.value || "";
+    const separator = value.indexOf(":");
+    if (separator < 0) return;
+    state.currentProvider = {
+      kind: value.slice(0, separator),
+      id: value.slice(separator + 1),
+    };
+    const models = activeProvider()?.models || [];
+    const preferred = models.find((model) => model.available) || models[0];
+    state.currentModel = preferred?.id || null;
+    renderModelOptions();
+    updateComposerHint();
+    if (state.currentModel) await switchSessionTarget();
+  });
   $("model-select").addEventListener("change", async (event) => {
     state.currentModel = event.target.value;
     updateComposerHint();
-    if (!state.session) return;
-    try {
-      const data = await api(`/v1/sessions/${state.session.id}/model`, {
-        method: "POST", body: JSON.stringify({ model: state.currentModel }),
-      });
-      state.session = data.session;
-      toast(`已切换到 ${activeModel()?.label || state.currentModel}，上下文保留`);
-    } catch (error) { toast(error.message, true); }
+    await switchSessionTarget();
   });
   $("prompt-select").addEventListener("change", async (event) => {
     state.currentPrompt = event.target.value;

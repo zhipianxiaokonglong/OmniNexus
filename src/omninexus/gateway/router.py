@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 
-from omninexus.config import AppConfig, ModelConfig
+from omninexus.config import AppConfig, ModelConfig, ProviderConfig
 from omninexus.core.models import ChatDelta, ContentPart, LLMMessage
 from omninexus.core.tokenizer import estimate_message_tokens, truncate_text
 from omninexus.errors import (
@@ -27,6 +27,7 @@ from omninexus.gateway.echo import EchoProvider
 from omninexus.gateway.gemini import GeminiProvider
 from omninexus.gateway.openai_compat import OpenAICompatibleProvider
 from omninexus.logging import get_logger
+from omninexus.providers.service import ProviderService, split_custom_ref
 
 log = get_logger("gateway")
 
@@ -111,10 +112,14 @@ class Gateway:
         config: AppConfig,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        provider_service: ProviderService | None = None,
     ) -> None:
         self.config = config
+        self._transport = transport
+        self._provider_service = provider_service
         self._providers: dict[str, BaseProvider] = {}
         self._buckets: dict[str, _TokenBucket] = {}
+        self._custom_names: set[str] = set()
         for name, provider_config in config.providers.items():
             cls = _PROVIDER_TYPES.get(provider_config.type)
             if cls is None:
@@ -131,6 +136,39 @@ class Gateway:
                 if isinstance(override, (int, float))
                 else config.gateway.rate_limit_rpm
             )
+
+    async def refresh_custom_providers(self) -> None:
+        if not self._provider_service:
+            return
+        desired: dict[str, BaseProvider] = {}
+        for snapshot in self._provider_service.custom_snapshots():
+            provider = snapshot.provider
+            name = f"custom:{provider.id}"
+            provider_config = ProviderConfig(
+                type="openai",
+                base_url=provider.base_url,
+                api_key_env="",
+                requires_key=False,
+                enabled=provider.enabled,
+                headers=provider.headers,
+                connect_timeout_s=min(8.0, max(1.0, float(provider.timeout_seconds))),
+            )
+            desired[name] = OpenAICompatibleProvider(
+                name,
+                provider_config,
+                gateway=self.config.gateway,
+                transport=self._transport,
+                api_key_override=snapshot.api_key,
+            )
+            if name not in self._buckets:
+                self._buckets[name] = _TokenBucket(self.config.gateway.rate_limit_rpm)
+        for name in list(self._custom_names - set(desired)):
+            old = self._providers.pop(name, None)
+            if old:
+                await old.close()
+                self._custom_names.discard(name)
+        self._providers.update(desired)
+        self._custom_names = set(desired)
 
     async def close(self) -> None:
         await asyncio.gather(
@@ -208,7 +246,87 @@ class Gateway:
             },
         )
 
+    def _custom_model_config(self, provider_id: str, model) -> ModelConfig:
+        return ModelConfig(
+            id=f"custom:{provider_id}:{model.name}",
+            provider=f"custom:{provider_id}",
+            model=model.name,
+            label=model.label,
+            input_modalities=list(model.capabilities.input_modalities),
+            output_modalities=["text"],
+            context_window=model.capabilities.context_window,
+            max_output_tokens=model.capabilities.max_output_tokens,
+            supports_streaming=model.capabilities.supports_streaming,
+            supports_tools=model.capabilities.supports_tools,
+            metadata={"custom": True, "verification": model.verification},
+        )
+
+    def _plan_custom(self, model_id: str, parts: list[ContentPart]) -> RoutePlan:
+        if not self._provider_service:
+            raise OmniError(ErrorCode.UNKNOWN_MODEL, "Unknown model id.", status_code=404)
+        split = split_custom_ref(model_id)
+        if not split:
+            raise OmniError(ErrorCode.UNKNOWN_MODEL, "Unknown model id.", status_code=404)
+        provider_id, model_name = split
+        snapshot = self._provider_service.get_custom(provider_id)
+        if not snapshot:
+            raise OmniError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                "提供方已删除，请在聊天页重新选择。",
+                status_code=409,
+                details={"providerId": provider_id, "reason": "provider_deleted"},
+            )
+        provider = snapshot.provider
+        if not provider.enabled:
+            raise OmniError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                "提供方已禁用，请在聊天页重新选择。",
+                status_code=409,
+                details={"providerId": provider_id, "reason": "provider_disabled"},
+            )
+        model = next((item for item in provider.models if item.name == model_name), None)
+        if not model:
+            raise OmniError(
+                ErrorCode.MODEL_UNAVAILABLE,
+                "模型已删除，请重新选择模型。",
+                status_code=409,
+                details={"providerId": provider_id, "model": model_name},
+            )
+        chosen = model
+        effective_parts = list(parts)
+        degraded = False
+        reason: str | None = None
+        notes: list[str] = []
+        required = {part.modality for part in parts if part.modality != "text"}
+        if required and not required.issubset(set(chosen.capabilities.input_modalities)):
+            alternatives = [
+                item
+                for item in provider.models
+                if required.issubset(set(item.capabilities.input_modalities))
+            ]
+            if alternatives:
+                chosen = alternatives[0]
+                reason = "capability_route"
+                notes.append(f"routed within provider to {chosen.name} for {sorted(required)}")
+            else:
+                effective_parts = [self._degrade_part(part) for part in parts]
+                degraded = True
+                reason = "capability_degraded"
+                notes.append(f"model {chosen.name} does not support {sorted(required)}; degraded")
+        primary = self._custom_model_config(provider_id, chosen)
+        return RoutePlan(
+            requested_model=model_id,
+            primary=primary,
+            candidates=[primary],
+            effective_parts=effective_parts,
+            degraded=degraded,
+            capability_reason=reason,
+            notes=notes,
+        )
+
     def plan(self, model_id: str, parts: list[ContentPart]) -> RoutePlan:
+        if model_id.startswith("custom:"):
+            return self._plan_custom(model_id, parts)
         model = self.config.model_config_by_id(model_id)
         if not model:
             raise OmniError(
@@ -380,6 +498,12 @@ class Gateway:
         for index, candidate in enumerate(plan.candidates):
             provider = self._providers.get(candidate.provider)
             if provider is None:
+                if candidate.provider.startswith("custom:"):
+                    raise OmniError(
+                        ErrorCode.PROVIDER_UNAVAILABLE,
+                        "提供方不可用，请重新选择。",
+                        status_code=409,
+                    )
                 attempts.append(
                     {
                         "provider": candidate.provider,
@@ -390,7 +514,9 @@ class Gateway:
                 continue
             adapted = self._adapt_messages(messages, candidate)
             fitted = self._fit_messages(adapted, candidate, max_tokens + 512)
-            bucket = self._buckets[candidate.provider]
+            bucket = self._buckets.setdefault(
+                candidate.provider, _TokenBucket(self.config.gateway.rate_limit_rpm)
+            )
             for attempt in range(self.config.gateway.max_retries + 1):
                 attempt_info: dict[str, Any] = {
                     "provider": candidate.provider,

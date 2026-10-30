@@ -1,6 +1,6 @@
 # 验收对照
 
-> 本文对应任务书 **v1.1**（外部记忆管线协作取消，改为 Reserved 扩展）。
+> 本文对应任务书 **v1.1** + 自定义提供方需求（v1.2）；外部记忆管线仍为 Reserved 扩展。
 
 ## 1. 功能需求
 
@@ -19,7 +19,26 @@
 | 11 | 厂商推荐清单（BYOK） | 16 + 4 清单、Base URL、env | `docs/providers.md`、`/v1/providers` |
 | 12 | 开发文档 + 用户文档 | 架构/API/提示词/厂商/降级/记忆/隐私/测试/用户/开发 | `docs/` |
 
-## 2. 外部记忆管线（v1.1）
+## 2. 自定义模型提供方（v1.2）
+
+| 要求 | 实现 | 证据 |
+| --- | --- | --- |
+| 新增自定义提供方（名称/Base URL/Key/模型/协议/头） | 设置页表单 + `/v1/custom-providers` | `test_custom_provider_crud...`、Edge CDP UI E2E |
+| 模型手动或 `/models` 拉取 | 手动行 + discover API/UI | `test_custom_provider_discovery...` |
+| 列表/编辑/删除/启停 | CRUD + enabled 接口 | 同上、`test_disable_default...` |
+| 默认提供方/模型 | `app_settings` + `/v1/provider-defaults` | `test_custom_chat_stream...`、UI E2E |
+| 保存前测试，五类结果 | 三级测试 + 状态映射；无 Key 回显 | `test_custom_provider_test_levels` |
+| 严格 Base URL，不重复 `/v1` | `providers/urls.py`；纯域名前端非强制提示 | `test_strict_url_join...` |
+| 流式/非流式聊天 | 动态 OpenAI-compatible 适配器 | `test_custom_chat_stream...`、UI E2E |
+| Key 加密/掩码/不导出 | AES-GCM + `apiKeyMasked` + export 脱敏 | `test_custom_provider_crud...`、`test_export_import...` |
+| 删除正在使用：确认 + 默认切换 | 409 `DEFAULT_PROVIDER_REQUIRED` / `PROVIDER_IN_USE` | `test_delete_default_in_use...` |
+| 历史保留、标记不可用、手动迁移 | `providerAvailable` + 迁移 API/向导 | 同上 |
+| 能力为一等字段 + 预设 | `capabilities` + `CAPABILITY_PRESETS` + UI | `test_custom_capability...` |
+| 多模态探测/未验证 | 可选 1×1 图片探测；verification 字段 | `test_custom_provider_discovery...` |
+| 导入导出不含 Key | 导出 JSON 无 Key；导入禁用以待填 | `test_export_import...` |
+| 非 OpenAI 协议明确拒绝 | `UNSUPPORTED_PROTOCOL` + 单选项 UI | `test_provider_validation_errors` |
+
+## 3. 外部记忆管线（v1.1）
 
 | 要求 | 实现 | 证据 |
 | --- | --- | --- |
@@ -32,18 +51,18 @@
 | 可被未来扩展直接调用，mock 验证 | `HttpMemoryPlugin.health/query/writeback` | `test_http_plugin_health_and_query_can_be_called_directly` |
 | 不得删除接口 | 文档/测试/代码保留 | 发布检查 + `docs/memory-reserved.md` |
 
-## 3. 隐私与安全
+## 4. 隐私与安全
 
 | 要求 | 实现 | 证据 |
 | --- | --- | --- |
 | 对话本地存储，不上传网络 | SQLite 默认 `data/`；无遥测 | `storage/database.py`、`privacy-security.md` |
-| 密钥仅本地、不代管、不写日志 | 仅环境变量；注册表只存变量名；脱敏 | `test_api_never_returns_secret...`、`test_redactor...` |
+| 密钥仅本地、不代管、不写日志 | 内置厂商用环境变量；自定义 Key AES-GCM 加密，仅返回掩码 | `test_custom_provider_crud...`、`test_custom_key_never...`、`test_redactor...` |
 | 存档查看/导出/删除 | API + 页面 | `test_archive_create_export_delete` |
 | 搜索仅发用户配置的请求，不携带无关对话 | 只发 `query`/`top_k` | `test_search_only_sends_current_query...` |
 | 不提交 `.env`/对话/密钥/日志 | `.gitignore` + 发布清单 | 仓库状态检查 |
 | 日志不输出敏感内容 | 白名单字段 + filters | `logging.py`、测试 |
 
-## 4. 可独立运行
+## 5. 可独立运行
 
 | 检查 | 结果 |
 | --- | --- |
@@ -55,7 +74,7 @@
 | 容器 | `docker compose up --build` |
 | 测试不依赖外部网络/密钥 | 全部 `httpx.MockTransport` / echo |
 
-## 5. 自评估与故障注入
+## 6. 自评估与故障注入
 
 | 项 | 状态 |
 | --- | --- |
@@ -69,7 +88,7 @@
 | 根因分析 | 见 `docs/test-report.md` |
 | 真实厂商在线调用 | 未在 CI 执行（无密钥）；适配器用 mock 校验，用户填 Key 后使用 |
 
-## 6. 提交规范检查
+## 7. 提交规范检查
 
 - [x] 删除测试数据/日志/临时数据库/截图（发布前执行，见 `docs/development.md` 清单）
 - [x] 无测试人格/正式人设内容

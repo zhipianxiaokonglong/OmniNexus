@@ -10,6 +10,7 @@ OmniNexus/
 │  ├─ core/                     # 领域模型、分类器、Token 估算
 │  ├─ gateway/                  # 网关 + 厂商适配器
 │  ├─ memory/                   # Reserved 记忆插件与冻结契约
+│  ├─ providers/                # 自定义提供方、加密、测试、统一 catalog
 │  ├─ prompts/                  # 提示词档案/版本
 │  ├─ search/                   # 搜索源与 RAG
 │  ├─ sessions/                 # 会话、上下文、导出
@@ -134,6 +135,15 @@ async def stream(...) -> AsyncIterator[ChatDelta]:
 - 不得删除 `HttpMemoryPlugin`、`DisabledMemoryPlugin`、契约测试或文档。
 - 修改契约需联合评审 + 版本升级；见 [memory-reserved.md](memory-reserved.md)。
 
+## 8.1 自定义提供方开发
+
+- 新表/字段：`storage/database.py`（当前 schema v2）；会话新增 provider 字段是加法迁移。
+- 密钥：`providers/secrets.py::SecretBox`；禁止把明文写入 DB/日志/响应。
+- 存储/校验：`providers/store.py`；URL 规则：`providers/urls.py`（严格拼接，不补 `/v1`）。
+- 统一目录：`providers/service.py`；网关动态适配器：`gateway/router.py::refresh_custom_providers`。
+- 测试：`tests/test_custom_providers.py` 使用 `httpx.MockTransport`，覆盖 CRUD、加密、三级测试、
+  模型发现、严格 URL、默认/删除/禁用、导入导出、迁移、流式聊天。
+
 ## 9. 测试约定
 
 - 所有厂商网络调用用 `httpx.MockTransport`；CI 不调用真实 API。
@@ -151,7 +161,7 @@ python -m ruff check src tests
 - [ ] `pytest` 全绿，`ruff` 全绿。
 - [ ] 无真实密钥：`git grep` 检查 `sk-`、`AIza`、`Bearer`、`api_key=`。
 - [ ] 无 `.env`；只有 `.env.example` 且为空/占位。
-- [ ] 无 `data/`、`*.db`、`*.log`、`*.jsonl`、导出文件、截图临时文件。
+- [ ] 无 `data/`、`*.db`、`*.log`、`*.jsonl`、`provider-secrets.key`、导出文件、截图临时文件。
 - [ ] 无测试人格/临时人设：搜索 `persona`、`测试人格`、`test persona`、自定义临时配置名；
       `DELETE` 测试配置并清理 `data/`。
 - [ ] 无调试输出/临时脚本/`print` 调试；测试脚本保留在 `tests/`。

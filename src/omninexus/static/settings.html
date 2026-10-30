@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>设置 · 模型提供方 · OmniNexus</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/settings.css">
+</head>
+<body class="settings-page">
+  <header class="settings-topbar">
+    <a class="brand compact" href="/">
+      <img src="/static/favicon.svg" alt="" width="28" height="28">
+      <span>OmniNexus</span>
+    </a>
+    <div class="settings-title">设置 · 模型提供方</div>
+    <a class="secondary" href="/">返回聊天</a>
+  </header>
+
+  <main class="settings-main">
+    <section class="settings-hero">
+      <div>
+        <h1>模型提供方</h1>
+        <p>内置厂商只读；自定义提供方仅支持 OpenAI 兼容接口。API Key 加密保存在本机。</p>
+      </div>
+      <div class="hero-actions">
+        <button class="primary" id="add-provider" type="button">＋ 添加自定义提供方</button>
+        <button class="secondary" id="import-config" type="button">导入 JSON</button>
+        <a class="secondary" id="export-config" href="/v1/provider-config/export">导出 JSON（不含 Key）</a>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+      </div>
+    </section>
+
+    <div class="settings-grid">
+      <section class="settings-card">
+        <div class="card-head">
+          <div>
+            <h2>默认提供方 / 模型</h2>
+            <p>新会话默认使用；历史会话不会被静默迁移。</p>
+          </div>
+        </div>
+        <div class="defaults-row">
+          <label class="field">
+            <span>默认提供方</span>
+            <select id="default-provider"></select>
+          </label>
+          <label class="field">
+            <span>默认模型</span>
+            <select id="default-model"></select>
+          </label>
+          <button class="secondary" id="save-defaults" type="button">保存默认</button>
+        </div>
+      </section>
+
+      <section class="settings-card warning-card">
+        <div class="card-head">
+          <div>
+            <h2>密钥存储</h2>
+            <p>Web 端使用本机 AES-GCM 加密文件；能访问本机账户的人仍可能读取。桌面版后续接入系统钥匙串。</p>
+          </div>
+        </div>
+        <div class="mono" id="storage-warning">加载中…</div>
+      </section>
+    </div>
+
+    <section class="settings-card">
+      <div class="card-head">
+        <div>
+          <h2>内置提供方 <span class="badge">只读</span></h2>
+          <p>通过 config/default.yaml 与 .env 配置；此处不可编辑或删除。</p>
+        </div>
+      </div>
+      <div id="builtin-list" class="provider-grid"></div>
+    </section>
+
+    <section class="settings-card">
+      <div class="card-head">
+        <div>
+          <h2>自定义提供方</h2>
+          <p>Base URL 按你填写的地址严格拼接 /models 与 /chat/completions，不自动补 /v1。</p>
+        </div>
+      </div>
+      <div id="custom-list" class="provider-grid"></div>
+      <div class="empty" id="custom-empty" hidden>还没有自定义提供方。点击右上角“添加自定义提供方”。</div>
+    </section>
+
+    <section class="settings-card" id="provider-form-card" hidden>
+      <div class="card-head">
+        <div>
+          <h2 id="form-title">添加自定义提供方</h2>
+          <p>先测试连接，再保存。测试通过 ≠ 已保存；保存后才参与聊天。</p>
+        </div>
+        <button class="icon-button" id="close-form" type="button" aria-label="关闭表单">×</button>
+      </div>
+
+      <div class="form-grid">
+        <label class="field">
+          <span>名称</span>
+          <input id="provider-name" maxlength="80" placeholder="我的中转 / 本地 Ollama">
+        </label>
+        <label class="field">
+          <span>协议</span>
+          <select id="provider-protocol" disabled>
+            <option>OpenAI Compatible</option>
+          </select>
+        </label>
+        <label class="field span-2">
+          <span>Base URL</span>
+          <input id="provider-base-url" spellcheck="false" placeholder="https://api.example.com/v1">
+          <small class="field-help">严格拼接：<code id="url-preview">https://api.example.com/v1/chat/completions</code></small>
+          <div class="inline-suggest" id="base-url-suggest" hidden>
+            <span>地址未包含路径。是否补全为 <code id="base-url-suggestion"></code>？</span>
+            <button class="text-button" id="accept-v1" type="button">补全</button>
+            <button class="text-button" id="reject-v1" type="button">保持原样</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>API Key（可留空）</span>
+          <input id="provider-api-key" type="password" autocomplete="new-password" placeholder="sk-…">
+          <small class="field-help" id="api-key-help">保存后仅显示掩码，不会回显完整 Key。</small>
+        </label>
+        <label class="field">
+          <span>测试超时（秒）</span>
+          <input id="provider-timeout" type="number" min="1" max="120" value="10">
+        </label>
+        <label class="field span-2">
+          <span>自定义请求头（JSON，可选）</span>
+          <textarea id="provider-headers" rows="3" spellcheck="false" placeholder='{"X-Title":"OmniNexus"}'></textarea>
+          <small class="field-help">禁止 Authorization / x-api-key；鉴权请使用上方 API Key。</small>
+        </label>
+        <label class="field checkbox-line">
+          <input type="checkbox" id="provider-enabled" checked>
+          <span>启用该提供方</span>
+        </label>
+        <label class="field checkbox-line" id="clear-key-wrap" hidden>
+          <input type="checkbox" id="provider-clear-key">
+          <span>清除已保存的 API Key</span>
+        </label>
+      </div>
+
+      <div class="models-editor">
+        <div class="models-head">
+          <div>
+            <h3>模型与能力</h3>
+            <p>能力声明用于多模态路由和上下文裁剪。未测试的模型显示“未验证”。</p>
+          </div>
+          <div class="row-actions">
+            <label class="field default-model-field">
+              <span>默认模型</span>
+              <select id="provider-default-model"></select>
+            </label>
+            <button class="secondary" id="discover-models" type="button">从 /models 拉取</button>
+            <button class="secondary" id="add-model-row" type="button">＋ 手动添加</button>
+          </div>
+        </div>
+        <div id="model-rows" class="model-rows"></div>
+      </div>
+
+      <div class="test-panel" id="test-panel" hidden>
+        <div class="test-head">
+          <strong>连接测试</strong>
+          <span id="test-status" class="badge"></span>
+        </div>
+        <div id="test-levels" class="test-levels"></div>
+        <p id="test-message" class="field-note"></p>
+        <div id="test-multimodal" class="field-note"></div>
+        <p class="field-note">保存前测试只验证当前填写内容，不会写入“已验证”状态；保存后可在卡片上再次测试。</p>
+      </div>
+
+      <div class="form-actions">
+        <button class="secondary" id="test-provider" type="button">测试连接</button>
+        <button class="primary" id="save-provider" type="button">保存提供方</button>
+      </div>
+    </section>
+
+    <section class="settings-card" id="migration-card">
+      <div class="card-head">
+        <div>
+          <h2>旧会话迁移 <span class="badge">手动</span></h2>
+          <p>提供方被删除或禁用后，历史会话保持原样并标记不可用。只有在这里明确勾选并确认，才会改变后续使用的模型。</p>
+        </div>
+        <button class="secondary" id="refresh-migration" type="button">刷新</button>
+      </div>
+      <div id="migration-list" class="migration-list"></div>
+      <div class="defaults-row" id="migration-actions" hidden>
+        <label class="field">
+          <span>目标提供方</span>
+          <select id="migration-provider"></select>
+        </label>
+        <label class="field">
+          <span>目标模型</span>
+          <select id="migration-model"></select>
+        </label>
+        <button class="primary" id="apply-migration" type="button">迁移选中会话</button>
+      </div>
+    </section>
+
+    <p class="settings-footnote">
+      OmniNexus 不提供账户或密钥。自定义提供方仅支持 OpenAI 兼容的 <code>/models</code> 与
+      <code>/chat/completions</code>。非 OpenAI 协议（如 Anthropic/Gemini 原生）请使用内置适配器或自建网关。
+    </p>
+  </main>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="/static/settings.js" defer></script>
+</body>
+</html>

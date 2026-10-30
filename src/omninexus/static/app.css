@@ -98,8 +98,16 @@ code { font-family: var(--mono); background: #0a0f16; border: 1px solid var(--li
   padding: 7px 10px; outline: none;
 }
 .field select:focus, .field input:focus, .field textarea:focus { border-color: rgba(143, 123, 255, .65); }
+#provider-select { max-width: 190px; }
 #model-select { max-width: 240px; }
 #prompt-select { max-width: 160px; }
+.provider-banner {
+  max-width: 880px; margin: 0 auto 14px; display: flex; align-items: center;
+  justify-content: space-between; gap: 12px; padding: 10px 13px;
+  border: 1px solid rgba(247,185,85,.35); background: rgba(247,185,85,.08);
+  color: #ffd98a; border-radius: 11px; font-size: 12.5px;
+}
+.provider-banner a { color: #ffd98a; white-space: nowrap; }
 .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 14px; cursor: pointer; white-space: nowrap; }
 .toggle input { accent-color: var(--accent); }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; min-width: 0; }

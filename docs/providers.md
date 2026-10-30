@@ -3,10 +3,38 @@
 ## 1. 原则
 
 - **BYOK（Bring Your Own Key）**：OmniNexus 只提供适配器与推荐，不提供密钥、账户、额度或代管。
-- 密钥只从**本机环境变量**读取（`api_key_env`），不通过 HTTP 上传，不写数据库，不写日志。
-- 所有 Base URL 与模型 ID 都可在 `config/default.yaml` 修改；厂商接口和模型会变化，请以厂商官方
-  文档为准。
+- 内置厂商密钥只从**本机环境变量**读取（`api_key_env`）；自定义提供方 Key 经本地 AES-GCM 加密
+  落库，不返回完整值、不写日志、不导出。
+- 所有 Base URL 与模型 ID 都可配置；厂商接口和模型会变化，请以厂商官方文档为准。
 - 默认注册表中的能力（文本/视觉、上下文窗口）是工程默认值，不是厂商 SLA；可自行修正。
+
+## 1.1 自定义提供方（v1.2）
+
+设置页 **设置 · 模型提供方** 可添加任意 OpenAI-compatible 服务：
+
+| 字段 | 说明 |
+| --- | --- |
+| 名称 | 用户自定义，唯一 |
+| Base URL | **严格拼接**，不自动补 `/v1`；placeholder 为 `https://api.example.com/v1` |
+| API Key | 可留空（本地无鉴权）；AES-GCM 加密落库，页面只显示 `sk-****abcd` |
+| 模型 | 手动添加或从 `GET {baseUrl}/models` 拉取 |
+| 能力 | `inputModalities`、`contextWindow`、`maxOutputTokens`、`supportsStreaming`；可用预设 |
+| 请求头 | 可选非敏感头；禁止 `Authorization` / `x-api-key` |
+| 协议 | 本期仅 `openai-compatible`；其他值返回 422 |
+| 测试超时 | 默认 10 秒，可按提供方设置 |
+
+Base URL 示例：
+
+```text
+https://api.example.com          → /chat/completions
+https://api.example.com/v1       → /v1/chat/completions
+https://api.example.com/v1/      → /v1/chat/completions
+```
+
+只有纯域名时，页面会**非强制**提示是否补 `/v1`；后端不会自动补。
+
+自定义提供方失败不跨提供方静默回退；同一提供方内可因图片输入路由到声明的视觉模型。
+历史会话不会静默迁移。
 
 ## 2. 推荐清单
 

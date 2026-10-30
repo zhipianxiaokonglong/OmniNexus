@@ -31,7 +31,7 @@
           <span class="dot" id="status-dot"></span>
           <span id="status-text">正在连接…</span>
         </div>
-        <button class="text-button" id="open-providers" type="button">厂商与模型</button>
+        <button class="text-button" id="open-providers" type="button">设置 · 模型提供方</button>
         <button class="text-button" id="open-prompts" type="button">提示词管理</button>
         <a class="text-button" href="/docs" target="_blank" rel="noopener">API 文档</a>
         <p class="privacy-note">对话与密钥只在本机。网络搜索仅发送当前查询。</p>
@@ -42,6 +42,10 @@
       <header class="topbar">
         <button class="icon-button mobile-only" id="toggle-sidebar" type="button" aria-label="打开侧栏">☰</button>
         <div class="selectors">
+          <label class="field">
+            <span>提供方</span>
+            <select id="provider-select" aria-label="选择模型提供方"></select>
+          </label>
           <label class="field">
             <span>模型</span>
             <select id="model-select" aria-label="选择模型"></select>
@@ -63,6 +67,10 @@
       </header>
 
       <section class="chat" id="chat" aria-live="polite">
+        <div class="provider-banner" id="provider-banner" hidden>
+          <span id="provider-banner-text">当前会话使用的提供方不可用。</span>
+          <a href="/settings">前往设置</a>
+        </div>
         <div class="welcome" id="welcome">
           <div class="welcome-mark">◉</div>
           <h1>本地优先的模型编排</h1>
@@ -136,30 +144,6 @@
             <strong>版本历史</strong>
             <div id="prompt-versions" class="versions"></div>
           </div>
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <div class="modal-backdrop" id="providers-modal" hidden>
-    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="providers-modal-title">
-      <header class="modal-header">
-        <div>
-          <h2 id="providers-modal-title">厂商与模型</h2>
-          <p>BYOK：密钥只从本机环境变量读取，不经过浏览器、不写入日志。</p>
-        </div>
-        <button class="icon-button" data-close="providers-modal" type="button" aria-label="关闭">×</button>
-      </header>
-      <div class="modal-body">
-        <div class="notice">
-          在项目根目录复制 <code>.env.example</code> 为 <code>.env</code>，填入所需厂商密钥后重启服务。
-          未配置的模型会显示为不可用；本地模型无需密钥。
-        </div>
-        <div class="provider-list" id="provider-list"></div>
-        <div class="reserved-block">
-          <h3>保留扩展：外部记忆管线 <span class="badge">Reserved</span></h3>
-          <p>本期未接入，默认禁用；正式记忆机制是本地对话存档 + 最近窗口。接口契约与适配器保留，未接入时健康探测返回 unavailable，对主流程零影响。</p>
-          <div id="memory-status" class="mono"></div>
         </div>
       </div>
     </section>
