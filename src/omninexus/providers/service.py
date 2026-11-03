@@ -104,7 +104,19 @@ class ProviderService:
                 return ProviderDefaults(
                     provider_kind="builtin", provider_id=provider_id, model=model
                 )
-        # Prefer any configured model (including a configured custom provider).
+        # If the configured default provider is configured, use its first model
+        # instead of jumping to a different provider on first run.
+        default_provider = ref.split(":", 1)[0] if ":" in ref else ""
+        for model in self.config.models:
+            if (
+                model.provider == default_provider
+                and self.config.providers[model.provider].is_configured()
+            ):
+                return ProviderDefaults(
+                    provider_kind="builtin",
+                    provider_id=model.provider,
+                    model=model.model,
+                )
         for snapshot in self._snapshots.values():
             if snapshot.provider.enabled and snapshot.provider.models:
                 return ProviderDefaults(

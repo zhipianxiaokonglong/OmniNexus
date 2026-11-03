@@ -68,8 +68,14 @@ async def test_search_only_sends_current_query_and_cites_sources(tmp_path) -> No
         payload = second.json()
         assert payload["tags"]["intent"] == "tool"
         assert payload["tags"]["type"] == "text"
-        assert "参考来源" in payload["content"]
-        assert "https://example.com/reference" in payload["content"]
+        # Default: citations stay out of TTS-visible content; they are available
+        # via the citations event/API.
+        assert "参考来源" not in payload["content"]
+        assert "https://example.com/reference" not in payload["content"]
+
+        citations = await client.get(f"/v1/events/{payload['event_id']}/citations")
+        assert citations.status_code == 200
+        assert citations.json()["citations"][0]["url"] == "https://example.com/reference"
 
         search_request = recorder.with_host("search.test")[0]
         search_body = json.loads(search_request.read())
@@ -88,6 +94,42 @@ async def test_search_only_sends_current_query_and_cites_sources(tmp_path) -> No
         citations = await client.get(f"/v1/events/{payload['event_id']}/citations")
         assert citations.status_code == 200
         assert citations.json()["citations"][0]["url"] == "https://example.com/reference"
+
+
+@pytest.mark.asyncio
+async def test_citations_in_content_opt_in(tmp_path) -> None:
+    config = base_config(tmp_path)
+    config.search = search_config()
+    config.gateway.citations_in_content = True
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "search.test":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "title": "Example source",
+                            "url": "https://example.com/reference",
+                            "snippet": "snippet",
+                        }
+                    ]
+                },
+            )
+        return sse_response("Answer with citation [1].")
+
+    async with app_client(config, transport=make_transport(handler)) as (client, _):
+        response = await client.post(
+            "/v1/events",
+            json={
+                "event_id": "abababab-2222-4222-8222-abababababab",
+                "parts": [{"modality": "text", "content": "inline citations"}],
+                "metadata": {"web_search": True},
+            },
+        )
+        assert response.status_code == 200
+        assert "参考来源" in response.json()["content"]
+        assert "https://example.com/reference" in response.json()["content"]
 
 
 @pytest.mark.asyncio

@@ -3,14 +3,51 @@
 from __future__ import annotations
 
 from omninexus.core.classifier import classify, classify_emotion, classify_type
+from omninexus.core.emotions import (
+    EMOTION_CONTRACT_VERSION,
+    LEGACY_EMOTION_ALIASES,
+    PUBLIC_EMOTION_LABELS,
+    normalize_emotion,
+)
 from omninexus.core.models import ContentType, Emotion, Intent
 
 
 def test_emotion_chinese_and_english() -> None:
-    assert classify_emotion("太好了，非常感谢你的帮助！") == Emotion.GRATITUDE
-    assert classify_emotion("I am so happy and excited, this is wonderful") == Emotion.JOY
-    assert classify_emotion("这真的让我很生气，太可恶了") == Emotion.ANGER
-    assert classify_emotion("普通的事实陈述，没有明显情绪。") == Emotion.NEUTRAL
+    assert classify_emotion("太好了，非常感谢你的帮助！") == Emotion.JOY.value
+    assert classify_emotion("I am so happy and excited, this is wonderful") == Emotion.JOY.value
+    assert classify_emotion("这真的让我很生气，太可恶了") == Emotion.ANGER.value
+    assert classify_emotion("普通的事实陈述，没有明显情绪。") == Emotion.NEUTRAL.value
+
+
+def test_emotion_contract_v2_labels_and_legacy_aliases() -> None:
+    assert EMOTION_CONTRACT_VERSION == "2"
+    assert len(PUBLIC_EMOTION_LABELS) == 12
+    assert {item.value for item in Emotion} == set(PUBLIC_EMOTION_LABELS)
+    assert normalize_emotion("fear") == "sadness"
+    assert normalize_emotion("confusion") == "frustration"
+    assert normalize_emotion("gratitude") == "joy"
+    assert normalize_emotion("unknown-label") == "neutral"
+    assert LEGACY_EMOTION_ALIASES == {
+        "fear": "sadness",
+        "confusion": "frustration",
+        "gratitude": "joy",
+    }
+    # Legacy label in archives/output must be normalized at the boundary.
+    from omninexus.core.models import OutputTags
+
+    assert OutputTags(emotion="fear", type="text", intent="reply").emotion == "sadness"
+
+
+def test_new_emotion_categories() -> None:
+    assert classify_emotion("别担心，我在这里陪着你") == Emotion.COMFORT.value
+    assert classify_emotion("对不起，是我的错") == Emotion.APOLOGY.value
+    assert classify_emotion("加油，你可以做到的") == Emotion.ENCOURAGEMENT.value
+    assert classify_emotion("冷静一下，深呼吸") == Emotion.CALM.value
+    assert classify_emotion("我太激动了，迫不及待") == Emotion.EXCITEMENT.value
+    assert classify_emotion("亲爱的，抱抱你") in {
+        Emotion.COMFORT.value,
+        Emotion.TENDERNESS.value,
+    }
 
 
 def test_content_types() -> None:

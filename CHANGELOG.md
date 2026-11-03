@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0 — 2026-11-03
+
+### Changed
+
+- **Emotion contract v2**：对外只输出 12 类（neutral/joy/excitement/comfort/tenderness/calm/
+  sadness/apology/encouragement/surprise/frustration/anger）；旧 `fear→sadness`、
+  `confusion→frustration`、`gratitude→joy` 在边界归一。
+- `GET /v1/health`、`GET /v1/settings` 增加 `tag_contract`；SSE/JSON 增加
+  `X-OmniNexus-Tag-Contract: 2`。
+- `metadata.session_id` 兼容回退 + warning；顶层 `session_id` 缺失时 warning 并在
+  `meta`/响应头标记 `session_created`。
+- `gateway.citations_in_content` 默认 `false`：来源 URL 不再进入 `final.content`，仍通过
+  citations 事件与 API 提供。
+- 默认模型不可用时优先选择默认厂商的已配置模型，减少“只配一家厂商首跑失败”。
+- 版本与 tag `v0.3.0`；新增 `docs/COMPATIBILITY.md` 与发布说明。
+
 ## 0.2.0 — 2026-10-30
 
 ### Added

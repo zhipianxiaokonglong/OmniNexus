@@ -1,6 +1,6 @@
 # 测试与自评估报告
 
-- 版本：OmniNexus 0.2.0（自定义模型提供方）
+- 版本：OmniNexus 0.3.0（审计修复）
 - 任务书：v1.1 + 自定义提供方需求；外部记忆管线仍为 Reserved
 - 测试日期：2026-10-30
 - 环境：Windows 11（amd64），Python 3.13.9，pytest 8.x，httpx MockTransport，SQLite 3
@@ -10,7 +10,7 @@
 ## 1. 结果摘要
 
 ```text
-73 passed
+78 passed
 ruff check: All checks passed
 coverage: 81% statements/branches (见 §9)
 ```
@@ -60,6 +60,10 @@ coverage: 81% statements/branches (见 §9)
 | `test_retry_same_provider_before_fallback` | 同厂商失败一次后重试成功，不调用备用 | PASS |
 | `test_all_providers_failed_returns_structured_error` | 503 + `ALL_PROVIDERS_FAILED` + attempts | PASS |
 | `test_sse_event_contract` | meta/route/delta/final，delta stream=true，final=false | PASS |
+| `test_tag_contract_v2_and_session_signals` | 12 类契约、session 顶层/回退信号、响应头 | PASS |
+| `test_emotion_contract_v2_labels_and_legacy_aliases` | 12 类、旧标签归一 | PASS |
+| `test_citations_in_content_opt_in` | 默认正文无 URL，开启后追加 | PASS |
+| `test_default_model_falls_back_to_only_configured_provider` | 单厂商首跑默认回退 | PASS |
 
 ## 4. 故障注入矩阵
 
@@ -126,6 +130,7 @@ coverage: 81% statements/branches (见 §9)
 | 自定义提供方 UI（Edge CDP） | 添加表单、Base URL 补 `/v1` 提示、三级测试成功、保存、设默认、聊天流式回复，全部通过 |
 | Key 展示 | 卡片显示 `sk-****1234`，无完整 Key |
 | 页面截图 | 无遮挡、无空白模态框（修复 `[hidden]` 后） |
+| 审计修复（v0.3.0） | Emotion v2 12 类、旧标签归一、session 信号、引用默认不进入正文，均通过自动化；SSE/health 实测 tag_contract=2 |
 
 浏览器自动化不是 CI 的一部分（本机 Edge 驱动不稳定）；CI 覆盖 API/SSE 契约。
 
@@ -179,6 +184,14 @@ coverage: 81% statements/branches (见 §9)
 - **回归**：headless 截图 + DOM 检查；后续可加视觉回归。
 - **预防**：组件显隐用显式 class 或统一 `[hidden]` 规则。
 
+### R-09 审计条目修复（v0.3.0）
+- **O-01**：Emotion 9->12，旧标签归一；`tag_contract`/header/meta 校验。
+- **O-02**：metadata 只声明生效键；`metadata.session_id` 兼容回退并 warning。
+- **O-03**：默认模型优先同厂商已配置模型；`/v1/health.default` 可观测。
+- **O-04**：缺会话 ID warning + `session_created` 信号。
+- **O-05**：引用 URL 默认不进入正文；citations 事件/API 保留；可配置内嵌。
+- **O-06**：0.3.0 + tag + COMPATIBILITY/发布说明；本次按要求不推送 GitHub。
+
 ### R-07 导入配置 422：导出文件根字段被拒绝（P2）
 
 - **现象**：导出 JSON 直接导入返回 422。
@@ -206,7 +219,7 @@ coverage: 81% statements/branches (见 §9)
 
 ```text
 command: python -m pytest --cov=omninexus --cov-report=term -q
-TOTAL 4336 stmts, 648 miss, 1232 branches, 324 partial, 81% coverage
+TOTAL 4390 stmts, 652 miss, 1250 branches, 325 partial, 81% coverage
 ```
 
 主要模块：orchestrator 80%、gateway/router 79%、prompts 82%、sessions 83%、storage 91%、

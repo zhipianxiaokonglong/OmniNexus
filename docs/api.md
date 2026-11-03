@@ -54,6 +54,20 @@ Base URL：`http://127.0.0.1:8000`。交互式 OpenAPI：`/docs`，原始 schema
 | `metadata.prompt_profile` | 否 | 本轮提示词配置 ID；显式不存在返回 404 |
 | `metadata.web_search` | 否 | 本轮是否启用搜索；默认取会话设置 |
 | `metadata.locale` | 否 | 模板变量与展示区域；最长 32 字符 |
+| `metadata.session_id` | 否（不推荐） | 兼容旧调用的回退：合法 UUID 时使用并打 warning；**正确位置是事件顶层** |
+| 其他 `metadata.*` | 否 | 当前不生效、不持久化、不写入日志；请勿依赖 |
+
+#### metadata 生效键表
+
+| 键 | 是否生效 | 说明 |
+| --- | --- | --- |
+| `providerKind` / `providerId` / `modelName` | 是 | 选择提供方/模型 |
+| `model` | 是（兼容旧调用） | canonical ref；如 `openai:gpt-4o-mini` |
+| `prompt_profile` | 是 | 提示词配置 ID |
+| `web_search` | 是 | 本轮搜索开关 |
+| `locale` | 是 | 模板变量/展示区域 |
+| `session_id` | 兼容回退 | 推荐放顶层；放这里会 warning，并回退使用 |
+| 其他键 | 否 | 忽略，不持久化 |
 
 ### 1.2 兼容形式
 
@@ -110,9 +124,9 @@ JSON 模式返回单个对象；SSE 模式的 `delta` 与 `final` 帧数据也�
 | --- | --- | --- |
 | `event_id` | UUID | 本回合输出事件 ID，同一回合所有帧一致；幂等重投时复用 |
 | `session_id` | UUID | 会话 ID |
-| `content` | string | `delta` 帧为增量；`final`/JSON 为完整文本（含引用来源附录） |
+| `content` | string | `delta` 帧为增量；`final`/JSON 为完整文本。默认**不含**引用 URL；只有 `gateway.citations_in_content=true` 时才追加来源附录 |
 | `stream` | bool | `delta` 为 `true`；`final`/JSON 为 `false` |
-| `tags.emotion` | string | joy, sadness, anger, fear, surprise, confusion, frustration, gratitude, neutral |
+| `tags.emotion` | string | Contract v2：neutral, joy, excitement, comfort, tenderness, calm, sadness, apology, encouragement, surprise, frustration, anger；旧 `fear→sadness`、`confusion→frustration`、`gratitude→joy` |
 | `tags.type` | string | text, code, list, table, json, mixed |
 | `tags.intent` | string | reply, tool, linkage |
 
@@ -124,6 +138,9 @@ JSON 模式返回单个对象；SSE 模式的 `delta` 与 `final` 帧数据也�
 - 分类器本地、确定性、无网络；不调用小模型，不增加延迟。
 - `delta` 帧的标签基于“当前已累积文本”，可能变化；`final` 为最终标签。下游应使用 `final` 的标签。
 - 标签不是内容安全审核结果。
+- **Emotion contract v2**：对外只输出 12 类。`GET /v1/health`、`GET /v1/settings` 的
+  `tag_contract` 与 SSE 响应头 `X-OmniNexus-Tag-Contract: 2` 可校验。
+- 旧存档/旧调用中的 `fear/confusion/gratitude` 在输出边界自动归一；历史原文不变。
 
 ## 3. HTTP 模式
 
@@ -139,6 +156,9 @@ JSON 响应头：
 X-Event-Id: <output event uuid>
 X-Session-Id: <session uuid>
 X-Citations: <count>
+X-OmniNexus-Tag-Contract: 2
+X-Session-Created: true|false
+X-Session-Legacy: true|false
 ```
 
 JSON 错误响应统一为：
@@ -178,7 +198,7 @@ data: {"event_id":"…","session_id":"…","content":"完整文本","stream":fal
 
 | `event` | 是否契约事件 | 说明 |
 | --- | --- | --- |
-| `meta` | 否（辅助） | 会话、计划模型、检索/记忆状态、能力降级、丢弃历史条数 |
+| `meta` | 否（辅助） | 会话、计划模型、检索/记忆状态、能力降级、丢弃历史条数、`session_created`、`legacy_session_id`、`tag_contract` |
 | `route` | 否（辅助） | 实际选中厂商/模型、是否发生回退 |
 | `delta` | **是** | 增量文本，`stream=true`，标签为临时值 |
 | `citations` | 否（辅助） | 搜索结果与 URL；仅本轮有搜索时发送 |
@@ -211,7 +231,8 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 ### 4.2 为什么 final 是 `stream=false`
 
 `delta` 是增量，`final` 是完整替换值。这样下游无需自己拼接或去重；若只消费 `delta`，也可按
-`event_id` 聚合。`final.content` 可能比 delta 拼接多出“参考来源 / Sources”附录。
+`event_id` 聚合。默认 `final.content` 与 delta 拼接一致；若开启
+`gateway.citations_in_content=true`，会追加“参考来源 / Sources”附录。
 
 ### 4.3 流式失败边界
 
@@ -405,6 +426,7 @@ Base URL **严格拼接**：`base.rstrip("/") + "/models"`、`+ "/chat/completio
 | `gateway.rate_limit_rpm` | 120 | 每厂商进程内令牌桶；0 禁用 |
 | `gateway.rate_limit_max_wait_s` | 1.5 | 等待配额上限，超过则回退 |
 | `gateway.max_output_tokens` | 2048 | 输出上限（与模型上限取小） |
+| `gateway.citations_in_content` | false | 是否把来源 URL 追加到正文；默认关闭，引用走 citations 事件/API |
 
 厂商返回 `429` 时会尊重 `Retry-After`（上限 60 秒/单次等待 10 秒）。`401/403/400` 不重试，直接
 进入下一候选。限流为进程内实现，多 worker 部署需外部限流。

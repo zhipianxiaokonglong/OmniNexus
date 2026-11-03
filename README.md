@@ -11,8 +11,10 @@ OmniNexus 接收上游多模态输入事件，完成模型路由、提示词渲�
 
 ---
 
-## 当前范围（v1.2）
+## 当前范围（v0.3.0）
 
+- **审计修复**：Emotion contract v2（12 类）、session 信号、引用正文策略、默认模型首跑回退与
+  metadata/session_id 兼容告警。
 - **自定义模型提供方**：设置页可添加/编辑/删除/启停 OpenAI-compatible 提供方，填写 Base URL、
   API Key、模型与能力；支持 `/models` 拉取、三级连接测试、多模态探测、默认提供方/模型。
 - 内置厂商保留为**只读**；自定义提供方仅支持 OpenAI 兼容协议。
@@ -43,7 +45,7 @@ OmniNexus 接收上游多模态输入事件，完成模型路由、提示词渲�
 | 联网搜索 | Tavily / Brave / SearXNG / DuckDuckGo / 自定义源；RAG + 引用溯源 |
 | 多模态协商 | 模型能力表；缺视觉能力时自动路由视觉模型，否则带说明降级为文字 |
 | 对话存档 | SQLite 持久化、历史、标题、导出 JSON/Markdown、删除、上下文裁剪 |
-| 情感 / 类型 / 意图标签 | 本地确定性分类器，逐帧随输出事件下发 |
+| 情感 / 类型 / 意图标签 | 本地确定性分类器；Emotion contract v2（12 类），逐帧随输出事件下发 |
 | 隐私 | 数据本地；自定义 Key 加密落库；日志脱敏；搜索只发送当前查询 |
 | 离线演示 | 可选 `echo` 诊断模型，零密钥跑通完整链路（默认关闭） |
 
@@ -181,7 +183,8 @@ python -m ruff check src tests
 python -m pytest --cov=omninexus --cov-report=term-missing
 ```
 
-73 个自动化测试覆盖：自定义提供方 CRUD/Key 加密/测试分级/模型发现/默认设置/导入导出/迁移、
+78 个自动化测试覆盖：Emotion contract v2、metadata/session 信号、引用正文策略、
+自定义提供方 CRUD/Key 加密/测试分级/模型发现/默认设置/导入导出/迁移、
 多模型切换与上下文延续、重试/回退、限流、超时、能力协商、SSE 契约、提示词版本化、
 存档导出/删除、搜索隐私、密钥脱敏、保留记忆插件的禁用/超时/故障零影响等。
 完整矩阵、故障注入与根因分析见 [测试报告](docs/test-report.md)。
@@ -201,6 +204,8 @@ python -m pytest --cov=omninexus --cov-report=term-missing
 | [开发文档](docs/development.md) | 目录、扩展厂商、测试、发布清单 |
 | [测试报告](docs/test-report.md) | 用例、故障注入、根因分析、限制 |
 | [验收对照](docs/acceptance.md) | 需求 → 证据映射 |
+| [兼容性矩阵](docs/COMPATIBILITY.md) | 版本、Emotion v2、Event v1、Session 信号 |
+| [0.3.0 发布说明](docs/releases/v0.3.0.md) | 本次变更与升级说明 |
 
 ## 常用命令
 
@@ -220,6 +225,8 @@ docker compose up --build               # 容器（仅发布到 127.0.0.1）
 - 真实厂商 API 需要用户自己的密钥；CI 与仓库测试不调用真实付费接口。
 - 模型 ID、上下文窗口与多模态能力会随厂商变化；内置模型在 `config/default.yaml` 修改，自定义模型
   在设置页修改，以厂商文档为准。
+- 情感标签为 **Emotion contract v2**（12 类）；旧 `fear/confusion/gratitude` 自动归一。
+- 引用 URL 默认不写入 `final.content`，避免语音朗读；引用通过 citations 事件/API 获取。
 - 流式响应在**首个 Token 之前**失败会透明重试/回退；已输出部分内容后失败不会重复拼接另一模型
   的答案，而是保留部分内容并发送 `warning`。
 - 自定义提供方失败**不跨提供方静默回退**，避免把对话发送到用户未选择的厂商；内置厂商保留原有回退链。

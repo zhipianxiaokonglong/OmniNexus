@@ -11,6 +11,7 @@ from typing import Any
 
 from omninexus.config import AppConfig
 from omninexus.core.classifier import classify
+from omninexus.core.emotions import tag_contract
 from omninexus.core.models import (
     Citation,
     InboundEvent,
@@ -71,6 +72,8 @@ class PreparedTurn:
     top_p: float
     replay: StoredMessage | None = None
     dropped_messages: int = 0
+    session_created: bool = False
+    legacy_session_id: bool = False
 
 
 @dataclass(slots=True)
@@ -129,12 +132,30 @@ class Orchestrator:
         except ValueError as exc:
             raise InvalidInputError(str(exc)) from exc
         metadata = event.metadata or {}
+        requested_session_id = str(event.session_id) if event.session_id else None
+        legacy_session_id = False
+        if not requested_session_id:
+            legacy_value = metadata.get("session_id")
+            if isinstance(legacy_value, str) and legacy_value.strip():
+                try:
+                    requested_session_id = str(uuid.UUID(legacy_value.strip()))
+                    legacy_session_id = True
+                except ValueError:
+                    log.warning(
+                        "metadata_session_id_invalid event_id=%s", str(event.event_id)
+                    )
         normalized = NormalizedInput(
             event_id=str(event.event_id),
-            session_id=str(event.session_id) if event.session_id else None,
+            session_id=requested_session_id,
             parts=parts,
             metadata=metadata,
+            legacy_session_id=legacy_session_id,
         )
+        if legacy_session_id:
+            log.warning(
+                "metadata_session_id_used event_id=%s; session_id belongs at the event top level",
+                normalized.event_id,
+            )
 
         replay = await self.db.get_message_by_source_event(normalized.event_id)
         if replay:
@@ -148,6 +169,15 @@ class Orchestrator:
             model=None,
             prompt_profile=None,
         )
+        normalized.session_created = created
+        if created and not normalized.session_id:
+            log.warning(
+                "session_id_missing event_id=%s; new session created id=%s",
+                normalized.event_id,
+                session.id,
+            )
+        elif created:
+            log.info("session_created event_id=%s session_id=%s", normalized.event_id, session.id)
 
         defaults = await self.providers.defaults()
         kind, provider_id, model_name, explicit = self._select_model(metadata, session, defaults)
@@ -286,6 +316,8 @@ class Orchestrator:
             temperature=self.config.gateway.temperature,
             top_p=self.config.gateway.top_p,
             dropped_messages=built.dropped_messages,
+            session_created=created,
+            legacy_session_id=normalized.legacy_session_id,
         )
 
     def _select_model(
@@ -447,6 +479,9 @@ class Orchestrator:
             "capability_reason": prepared.plan.capability_reason,
             "degraded": prepared.plan.degraded,
             "dropped_messages": prepared.dropped_messages,
+            "session_created": prepared.session_created,
+            "legacy_session_id": prepared.legacy_session_id,
+            "tag_contract": tag_contract(),
         }
 
     async def run_json(self, event: InboundEvent) -> TurnResult:
@@ -620,9 +655,13 @@ class Orchestrator:
             return
 
         citations = self._query_citations(prepared)
-        final_content = append_citations(text, citations)
-        # Classify the answer itself; the appended source list must not turn a
-        # prose answer into "list" or a code answer into "mixed".
+        final_content = (
+            append_citations(text, citations)
+            if self.config.gateway.citations_in_content
+            else text
+        )
+        # Classify the answer itself; any source appendix must not turn a prose
+        # answer into "list" or a code answer into "mixed".
         answer_tags = self._tags(text, prepared)
         output = OutputEvent(
             event_id=prepared.output_event_id,

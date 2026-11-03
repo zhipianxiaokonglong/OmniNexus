@@ -23,6 +23,7 @@ from omninexus.api.schemas import (
     VersionActivate,
 )
 from omninexus.api.sse import event_stream
+from omninexus.core.emotions import tag_contract
 from omninexus.core.models import InboundEvent, SessionRecord, iso_now
 from omninexus.errors import ErrorCode, OmniError
 from omninexus.prompts.manager import PromptManager
@@ -102,6 +103,9 @@ async def create_event(request: Request, event: InboundEvent) -> Response:
             "X-Accel-Buffering": "no",
             "X-Event-Id": prepared.output_event_id,
             "X-Session-Id": prepared.session.id,
+            "X-OmniNexus-Tag-Contract": "2",
+            "X-Session-Created": "true" if prepared.session_created else "false",
+            "X-Session-Legacy": "true" if prepared.legacy_session_id else "false",
         }
         return StreamingResponse(
             event_stream(orchestrator, prepared),
@@ -116,6 +120,9 @@ async def create_event(request: Request, event: InboundEvent) -> Response:
             "X-Event-Id": result.output.event_id,
             "X-Session-Id": result.output.session_id,
             "X-Citations": str(len(result.citations)),
+            "X-OmniNexus-Tag-Contract": "2",
+            "X-Session-Created": "true" if result.meta.get("session_created") else "false",
+            "X-Session-Legacy": "true" if result.meta.get("legacy_session_id") else "false",
         },
     )
 
@@ -351,6 +358,7 @@ async def settings(request: Request) -> dict[str, Any]:
         "default_prompt_profile": config.prompts.default_profile,
         "search": request.app.state.search.status(),
         "memory": request.app.state.memory.status().as_dict(),
+        "tag_contract": tag_contract(),
         "privacy": {
             "local_archive": True,
             "api_keys": "custom provider keys encrypted at rest; never returned by API or logged",
@@ -431,6 +439,8 @@ async def health(request: Request) -> dict[str, Any]:
         "time": iso_now(),
         "archive": {"type": "sqlite", "local": True, "formal_memory_path": True},
         "models": {"total": len(catalog), "configured": available},
+        "default": await request.app.state.provider_service.defaults(),
+        "tag_contract": tag_contract(),
         "memory": memory,
         "search": request.app.state.search.status(),
     }

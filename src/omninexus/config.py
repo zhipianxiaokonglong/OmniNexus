@@ -86,6 +86,7 @@ class GatewayConfig(BaseModel):
     top_p: float = 1.0
     context_reserve_tokens: int = 512
     max_history_messages: int = 200
+    citations_in_content: bool = False
 
     @field_validator("max_retries", "rate_limit_rpm", "max_output_tokens")
     @classmethod

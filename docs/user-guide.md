@@ -130,7 +130,9 @@ ollama serve
 （如 `TAVILY_API_KEY`）。
 
 - 只发送**当前查询**，不发送历史；
-- 回答末尾追加「参考来源」；
+- 默认**不会**把来源 URL 写进正文（避免语音朗读 URL）；引用通过 SSE `citations` 事件、
+  页面引用列表和 `/v1/events/{event_id}/citations` 提供；
+- 如确需正文内嵌来源，可在 `config/default.yaml` 设置 `gateway.citations_in_content: true`；
 - 页面在回答下方显示可点击引用；
 - 搜索失败不会中断回答，只是没有引用。
 
@@ -186,6 +188,8 @@ API 还支持 Markdown 导出：`GET /v1/sessions/{id}/export?format=md`。
 | 模型列表拉取失败 | 允许手动填写模型名；先确认 `/models` 是否受支持 |
 | 删除默认提供方被拒 | 先在“默认提供方 / 模型”切换到其他可用项 |
 | 历史会话提示提供方不可用 | 在旧会话迁移向导中手动迁移，或重新选择提供方/模型 |
+| 情感标签只有 12 类 | 正常：Emotion contract v2；旧 fear/confusion/gratitude 映射为 sadness/frustration/joy |
+| 每轮都新建会话 | 检查客户端是否把 `session_id` 放在事件顶层；放 metadata 仅兼容并会 warning |
 | `503 NO_PROVIDER_AVAILABLE` | 无任何已配置模型；填密钥或 `OMNI_ENABLE_ECHO=1` |
 | `502 PROVIDER_AUTH` | 密钥无效/过期/权限不足；检查厂商控制台 |
 | `504 PROVIDER_TIMEOUT` | 网络/厂商慢；可增大 `gateway.first_token_timeout_s`，或配置回退 |

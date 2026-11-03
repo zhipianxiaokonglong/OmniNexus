@@ -75,6 +75,46 @@ async def test_sse_event_contract(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_tag_contract_v2_and_session_signals(tmp_path) -> None:
+    config = base_config(tmp_path)
+    async with app_client(config, transport=make_transport(handler(Recorder()))) as (client, _):
+        legacy_session = "99999999-9999-4999-8999-999999999999"
+        response = await client.post(
+            "/v1/events",
+            json={
+                "event_id": "acacacac-acac-4aca-8aca-acacacacacac",
+                "parts": [{"modality": "text", "content": "legacy metadata session"}],
+                "metadata": {"session_id": legacy_session},
+            },
+            headers={"Accept": "text/event-stream"},
+        )
+        assert response.status_code == 200
+        assert response.headers["x-omninexus-tag-contract"] == "2"
+        assert response.headers["x-session-created"] == "true"
+        assert response.headers["x-session-legacy"] == "true"
+        events = parse_sse(response.text)
+        meta = next(data for name, data in events if name == "meta")
+        assert meta["session_id"] == legacy_session
+        assert meta["session_created"] is True
+        assert meta["legacy_session_id"] is True
+        assert meta["tag_contract"]["version"] == "2"
+        assert len(meta["tag_contract"]["emotion"]["labels"]) == 12
+
+        second = await client.post(
+            "/v1/events",
+            json={
+                "event_id": "adadadad-adad-4ada-8ada-adadadadadad",
+                "session_id": legacy_session,
+                "parts": [{"modality": "text", "content": "top-level session"}],
+            },
+            headers={"Accept": "text/event-stream"},
+        )
+        assert second.status_code == 200
+        assert second.headers["x-session-created"] == "false"
+        assert second.headers["x-session-legacy"] == "false"
+
+
+@pytest.mark.asyncio
 async def test_json_event_has_exact_frozen_shape(tmp_path) -> None:
     config = base_config(tmp_path)
     async with app_client(config, transport=make_transport(handler(Recorder()))) as (client, _):

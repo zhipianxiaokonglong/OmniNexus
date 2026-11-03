@@ -291,6 +291,25 @@ async def test_offline_default_model_reroutes_to_configured_echo(tmp_path, monke
 
 
 @pytest.mark.asyncio
+async def test_default_model_falls_back_to_only_configured_provider(tmp_path) -> None:
+    config = base_config(tmp_path)
+    # Simulate the audit's "only one vendor configured" first run: the default
+    # model is not configured, but alpha is.
+    config.gateway.default_model = "openai:gpt-4o-mini"
+
+    async with app_client(
+        config, transport=make_transport(lambda request: sse_response("ok"))
+    ) as (client, _):
+        response = await client.post("/v1/sessions", json={})
+        assert response.status_code == 201, response.text
+        session = response.json()["session"]
+        assert session["model"] == "alpha:one"
+        assert session["provider_kind"] == "builtin"
+        health = await client.get("/v1/health")
+        assert health.json()["default"]["provider_id"] == "alpha"
+
+
+@pytest.mark.asyncio
 async def test_provider_timeout_falls_back(tmp_path) -> None:
     config = base_config(tmp_path)
 

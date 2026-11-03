@@ -85,6 +85,10 @@
 | 搜索失败 | 通过（自动化） |
 | 存档导出/删除/裁剪 | 通过（自动化） |
 | SSE 契约 | 通过（自动化 + 本地真实服务器） |
+| Emotion contract v2 / 旧标签归一 | 通过（自动化） |
+| session 顶层/兼容回退/创建信号 | 通过（自动化） |
+| 引用默认不进入正文、citations 仍可用 | 通过（自动化） |
+| 单厂商首跑默认回退 | 通过（自动化） |
 | 根因分析 | 见 `docs/test-report.md` |
 | 真实厂商在线调用 | 未在 CI 执行（无密钥）；适配器用 mock 校验，用户填 Key 后使用 |
 
@@ -96,6 +100,7 @@
 - [x] 无真实密钥
 - [x] 日志框架脱敏，日志文件 Git 忽略
 - [x] 仓库可独立安装运行
-- [x] 推送到 `https://github.com/zhipianxiaokonglong/OmniNexus`
+- [ ] 本次 0.3.0 修复按用户要求仅保留在本地，不推送 GitHub
+- [x] 历史交付曾推送到 `https://github.com/zhipianxiaokonglong/OmniNexus`
 
 > 最终提交前应以 `git status`、`git ls-files` 与测试报告为准复核本表。

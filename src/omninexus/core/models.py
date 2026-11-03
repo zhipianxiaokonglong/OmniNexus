@@ -12,6 +12,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from omninexus.core.emotions import Emotion, normalize_emotion
+
+__all__ = ["Emotion", "normalize_emotion"]
+
 MAX_PARTS = 16
 MAX_PART_CHARS = 12_000_000  # ~9 MB binary after base64 overhead
 _SECRET_METADATA_KEY = re.compile(
@@ -34,18 +38,6 @@ class Modality(StrEnum):
     FILE = "file"
 
 
-class Emotion(StrEnum):
-    JOY = "joy"
-    SADNESS = "sadness"
-    ANGER = "anger"
-    FEAR = "fear"
-    SURPRISE = "surprise"
-    CONFUSION = "confusion"
-    FRUSTRATION = "frustration"
-    GRATITUDE = "gratitude"
-    NEUTRAL = "neutral"
-
-
 class ContentType(StrEnum):
     TEXT = "text"
     CODE = "code"
@@ -62,9 +54,14 @@ class Intent(StrEnum):
 
 
 class OutputTags(BaseModel):
-    emotion: str = Field(description="Stable emotion label, see Emotion enum")
+    emotion: str = Field(description="Stable emotion label, see Emotion contract v2")
     type: str = Field(description="Content type: text|code|list|table|json|mixed")
     intent: str = Field(description="reply|tool|linkage")
+
+    @field_validator("emotion")
+    @classmethod
+    def _normalize_emotion(cls, value: str) -> str:
+        return normalize_emotion(value)
 
 
 class OutputEvent(BaseModel):
@@ -220,6 +217,8 @@ class NormalizedInput(BaseModel):
     session_id: str | None
     parts: list[ContentPart]
     metadata: dict[str, Any] = Field(default_factory=dict)
+    legacy_session_id: bool = False
+    session_created: bool = False
 
     @property
     def text(self) -> str:

@@ -35,6 +35,9 @@ gateway:
   temperature: 0.7
   top_p: 1.0
   context_reserve_tokens: 512
+  # Keep source URLs out of final.content by default (TTS would read them).
+  # Citations remain available via the SSE citations event and citations API.
+  citations_in_content: false
   max_history_messages: 200
 
 prompts:
