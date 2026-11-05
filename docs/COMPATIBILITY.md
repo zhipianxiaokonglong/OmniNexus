@@ -4,7 +4,8 @@
 
 | OmniNexus | Event contract | Emotion tag contract | Memory contract | Python |
 | --- | --- | --- | --- | --- |
-| 0.3.x | 1.0（字段不变） | **2**（12 类） | 1.0（Reserved） | 3.11+ |
+| 0.3.1 | 1.0（字段不变） | **2**（12 类） | 1.0（Reserved） | 3.11+ |
+| 0.3.0 | 1.0（字段不变） | 2（12 类） | 1.0（Reserved） | 3.11+ |
 | 0.2.x | 1.0 | 1（9 类，历史） | 1.0（Reserved） | 3.11+ |
 | 0.1.x | 1.0 | 1（9 类，历史） | — | 3.11+ |
 

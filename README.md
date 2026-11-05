@@ -11,7 +11,7 @@ OmniNexus 接收上游多模态输入事件，完成模型路由、提示词渲�
 
 ---
 
-## 当前范围（v0.3.0）
+## 当前范围（v0.3.1）
 
 - **审计修复**：Emotion contract v2（12 类）、session 信号、引用正文策略、默认模型首跑回退与
   metadata/session_id 兼容告警。
@@ -205,7 +205,8 @@ python -m pytest --cov=omninexus --cov-report=term-missing
 | [测试报告](docs/test-report.md) | 用例、故障注入、根因分析、限制 |
 | [验收对照](docs/acceptance.md) | 需求 → 证据映射 |
 | [兼容性矩阵](docs/COMPATIBILITY.md) | 版本、Emotion v2、Event v1、Session 信号 |
-| [0.3.0 发布说明](docs/releases/v0.3.0.md) | 本次变更与升级说明 |
+| [0.3.1 发布说明](docs/releases/v0.3.1.md) | 默认提供方 hotfix |
+| [0.3.0 发布说明](docs/releases/v0.3.0.md) | Emotion v2、引用策略、session 信号 |
 
 ## 常用命令
 

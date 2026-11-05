@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omninexus"
-version = "0.3.0"
+version = "0.3.1"
 description = "Local-first LLM orchestration core: multi-provider gateway, prompts, memory, search, archives and tagging."
 readme = "README.md"
 requires-python = ">=3.11"

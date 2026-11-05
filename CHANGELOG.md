@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1 — 2026-11-05
+
+### Fixed
+
+- **默认提供方/模型未作用于新会话**：`orchestrator` 在创建会话前读取
+  `/v1/provider-defaults`，并把 `provider_kind/provider_id/model_name` 与 canonical
+  `model` 一起持久化；不再被静态 `gateway.default_model` 遮蔽（Dounai 审计）。
+- 会话 `model` 与拆分字段统一生成，避免新旧字段不一致。
+- 历史会话保持原样、不静默迁移；不可用提供方仍返回 `409 PROVIDER_UNAVAILABLE`。
+- 新增回归测试 `test_new_session_uses_provider_defaults_not_gateway_default`。
+
 ## 0.3.0 — 2026-11-03 / hotfix 2026-11-05
 
 ### Changed
