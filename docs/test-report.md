@@ -10,7 +10,7 @@
 ## 1. 结果摘要
 
 ```text
-78 passed
+79 passed
 ruff check: All checks passed
 coverage: 81% statements/branches (见 §9)
 ```
@@ -184,7 +184,7 @@ coverage: 81% statements/branches (见 §9)
 - **回归**：headless 截图 + DOM 检查；后续可加视觉回归。
 - **预防**：组件显隐用显式 class 或统一 `[hidden]` 规则。
 
-### R-09 审计条目修复（v0.3.0）
+### R-09 审计条目修复（v0.3.0）\n- **Dounai 2026-11-05**：新建会话被 `gateway.default_model` 遮蔽；修复为先取 `provider-defaults` 再创建会话，并统一 `model` 与拆分字段。
 - **O-01**：Emotion 9->12，旧标签归一；`tag_contract`/header/meta 校验。
 - **O-02**：metadata 只声明生效键；`metadata.session_id` 兼容回退并 warning。
 - **O-03**：默认模型优先同厂商已配置模型；`/v1/health.default` 可观测。
@@ -219,7 +219,7 @@ coverage: 81% statements/branches (见 §9)
 
 ```text
 command: python -m pytest --cov=omninexus --cov-report=term -q
-TOTAL 4390 stmts, 652 miss, 1250 branches, 325 partial, 81% coverage
+TOTAL 4394 stmts, 662 miss, 1252 branches, 327 partial, 81% coverage
 ```
 
 主要模块：orchestrator 80%、gateway/router 79%、prompts 82%、sessions 83%、storage 91%、

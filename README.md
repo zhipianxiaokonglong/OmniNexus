@@ -183,7 +183,7 @@ python -m ruff check src tests
 python -m pytest --cov=omninexus --cov-report=term-missing
 ```
 
-78 个自动化测试覆盖：Emotion contract v2、metadata/session 信号、引用正文策略、
+79 个自动化测试覆盖：Emotion contract v2、metadata/session 信号、引用正文策略、默认提供方、
 自定义提供方 CRUD/Key 加密/测试分级/模型发现/默认设置/导入导出/迁移、
 多模型切换与上下文延续、重试/回退、限流、超时、能力协商、SSE 契约、提示词版本化、
 存档导出/删除、搜索隐私、密钥脱敏、保留记忆插件的禁用/超时/故障零影响等。

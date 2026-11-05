@@ -294,7 +294,7 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 | POST | `/v1/custom-providers/{id}/test` | 已保存配置测试 |
 | POST | `/v1/custom-providers/discover-models` | 拉取未保存配置的 `/models` |
 | POST | `/v1/custom-providers/{id}/discover-models` | 拉取已保存配置的 `/models` |
-| GET/PUT | `/v1/provider-defaults` | 默认提供方/模型 |
+| GET/PUT | `/v1/provider-defaults` | 默认提供方/模型；**新建会话使用此设置**，不再被 `gateway.default_model` 遮蔽 |
 | GET | `/v1/provider-config/export` | 导出（**不含 Key**） |
 | POST | `/v1/provider-config/import` | 导入（无 Key，默认禁用） |
 | GET | `/v1/provider-migration/candidates` | 不可用提供方的历史会话 |

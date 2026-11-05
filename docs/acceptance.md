@@ -26,7 +26,7 @@
 | 新增自定义提供方（名称/Base URL/Key/模型/协议/头） | 设置页表单 + `/v1/custom-providers` | `test_custom_provider_crud...`、Edge CDP UI E2E |
 | 模型手动或 `/models` 拉取 | 手动行 + discover API/UI | `test_custom_provider_discovery...` |
 | 列表/编辑/删除/启停 | CRUD + enabled 接口 | 同上、`test_disable_default...` |
-| 默认提供方/模型 | `app_settings` + `/v1/provider-defaults` | `test_custom_chat_stream...`、UI E2E |
+| 默认提供方/模型 | `app_settings` + `/v1/provider-defaults`；新建会话持久化该设置 | `test_new_session_uses_provider_defaults...`、UI E2E |
 | 保存前测试，五类结果 | 三级测试 + 状态映射；无 Key 回显 | `test_custom_provider_test_levels` |
 | 严格 Base URL，不重复 `/v1` | `providers/urls.py`；纯域名前端非强制提示 | `test_strict_url_join...` |
 | 流式/非流式聊天 | 动态 OpenAI-compatible 适配器 | `test_custom_chat_stream...`、UI E2E |

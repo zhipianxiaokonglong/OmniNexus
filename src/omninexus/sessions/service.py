@@ -59,10 +59,21 @@ class SessionService:
                 return existing, False
         new_id = session_id or str(uuid.uuid4())
         now = iso_now()
+        if provider_kind and provider_id and model_name:
+            # Keep the canonical ref and split fields consistent. This is the
+            # source of truth for new sessions; never fall back to the static
+            # gateway default when an explicit/default target is supplied.
+            model_ref = (
+                f"custom:{provider_id}:{model_name}"
+                if provider_kind == "custom"
+                else f"{provider_id}:{model_name}"
+            )
+        else:
+            model_ref = model or self.config.gateway.default_model
         record = SessionRecord(
             id=new_id,
             title=_clean_title(title_hint),
-            model=model or self.config.gateway.default_model,
+            model=model_ref,
             provider_kind=provider_kind,
             provider_id=provider_id,
             model_name=model_name,

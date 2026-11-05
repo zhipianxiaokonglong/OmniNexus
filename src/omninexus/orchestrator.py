@@ -163,11 +163,22 @@ class Orchestrator:
             return self._replay_turn(normalized, session, replay)
 
         text = normalized.text.strip()
+        # Resolve the user-configured provider defaults *before* creating the
+        # session. Passing only model=None let ensure() persist the static
+        # gateway.default_model, which then shadowed the settings default in
+        # _select_model (Dounai audit, 2026-11-05).
+        defaults = await self.providers.defaults()
+        default_ref = self.providers.canonical_ref(
+            defaults.provider_kind, defaults.provider_id, defaults.model
+        )
         session, created = await self.sessions.ensure(
             normalized.session_id,
             title_hint=text[:60] if text else "Image conversation",
-            model=None,
+            model=default_ref,
             prompt_profile=None,
+            provider_kind=defaults.provider_kind,
+            provider_id=defaults.provider_id,
+            model_name=defaults.model,
         )
         normalized.session_created = created
         if created and not normalized.session_id:
@@ -179,10 +190,9 @@ class Orchestrator:
         elif created:
             log.info("session_created event_id=%s session_id=%s", normalized.event_id, session.id)
 
-        defaults = await self.providers.defaults()
         kind, provider_id, model_name, explicit = self._select_model(metadata, session, defaults)
         requested_model = self.providers.canonical_ref(kind, provider_id, model_name)
-        if not created and not explicit:
+        if not created and not explicit and requested_model == session.model:
             available, reason = await self.providers.session_availability(session)
             if not available:
                 raise OmniError(

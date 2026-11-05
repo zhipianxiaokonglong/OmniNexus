@@ -64,6 +64,12 @@ event_id, session_id, content, stream, tags{emotion,type,intent}
 
 `metadata.session_id` 只在顶层缺失时回退；会写 warning（只含 event_id），不写对话内容。
 
+### 4.1 默认提供方/模型（0.3.0 修复）
+
+- 新建会话会持久化 `GET/PUT /v1/provider-defaults` 的结果；
+- `gateway.default_model` 仅作为**未设置用户默认**时的初始回退，不再遮蔽设置页默认；
+- 已有会话继续使用其记录中的模型；提供方不可用时返回 `409 PROVIDER_UNAVAILABLE`，不做静默迁移。
+
 ## 5. 端口
 
 默认 `8000`。跨仓库共存时请在启动脚本显式指定端口并检查占用，不使用隐式默认。

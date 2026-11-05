@@ -326,6 +326,46 @@ async def test_custom_capability_routes_within_provider(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_new_session_uses_provider_defaults_not_gateway_default(tmp_path) -> None:
+    """Dounai audit 2026-11-05: settings defaults must drive new sessions."""
+    config = base_config(tmp_path)
+    config.gateway.default_model = "openai:gpt-4o-mini"
+    backend = CustomBackend()
+
+    async with app_client(config, transport=make_transport(backend)) as (client, _):
+        provider = await create_provider(client)
+        await client.put(
+            "/v1/provider-defaults",
+            json={
+                "providerKind": "custom",
+                "providerId": provider["id"],
+                "model": "my-model",
+            },
+        )
+        stated = (await client.get("/v1/provider-defaults")).json()["defaults"]
+
+        response = await client.post(
+            "/v1/events",
+            json={
+                "event_id": "dddddddd-3333-4333-8333-dddddddddddd",
+                "parts": [{"modality": "text", "content": "use my default"}],
+            },
+            headers={"Accept": "text/event-stream"},
+        )
+        assert response.status_code == 200, response.text
+        session_id = response.headers["x-session-id"]
+        detail = (await client.get(f"/v1/sessions/{session_id}")).json()["session"]
+
+        assert (detail["provider_kind"], detail["provider_id"], detail["model_name"]) == (
+            stated["providerKind"],
+            stated["providerId"],
+            stated["model"],
+        )
+        assert detail["model"] == f"custom:{provider['id']}:my-model"
+        assert detail["model"] != config.gateway.default_model
+
+
+@pytest.mark.asyncio
 async def test_delete_default_in_use_and_session_migration(tmp_path) -> None:
     config = base_config(tmp_path)
     backend = CustomBackend()

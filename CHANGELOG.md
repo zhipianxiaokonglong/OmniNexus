@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — 2026-11-03
+## 0.3.0 — 2026-11-03 / hotfix 2026-11-05
 
 ### Changed
 
@@ -14,6 +14,8 @@
 - `gateway.citations_in_content` 默认 `false`：来源 URL 不再进入 `final.content`，仍通过
   citations 事件与 API 提供。
 - 默认模型不可用时优先选择默认厂商的已配置模型，减少“只配一家厂商首跑失败”。
+- **修复设置页默认提供方/模型不生效**：新建会话直接持久化 `provider-defaults`，不再被
+  `gateway.default_model` 遮蔽；历史会话保持原样、不静默迁移（Dounai 审计 2026-11-05）。
 - 版本与 tag `v0.3.0`；新增 `docs/COMPATIBILITY.md` 与发布说明。
 
 ## 0.2.0 — 2026-10-30
