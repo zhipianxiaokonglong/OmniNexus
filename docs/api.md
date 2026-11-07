@@ -177,6 +177,26 @@ JSON 错误响应统一为：
 
 错误信息不回显上游响应正文、密钥或对话内容。
 
+错误体字段固定为：
+
+```json
+{
+  "error": {
+    "code": "INVALID_INPUT",
+    "message": "…",
+    "retryable": false,
+    "details": {},
+    "request_id": "…"
+  },
+  "request_id": "…"
+}
+```
+
+- `code` / `message` / `retryable` 恒存在；
+- `details` 仅在需要时出现；
+- `request_id` 同时出现在错误体与 `X-Request-ID` 响应头，二者一致；
+- 下游可**直接读 `retryable`**，不必按错误码推断。
+
 ## 4. SSE 语义
 
 ```
@@ -275,7 +295,8 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 | GET | `/v1/providers` | 厂商 Base URL、环境变量名、是否已配置；**不返回密钥值** |
 | GET | `/v1/settings` | 页面初始化所需的模型/提示词/搜索/隐私摘要 |
 | GET | `/v1/health` | 应用、存档、配置模型数、保留记忆与搜索状态 |
-| GET | `/v1/healthz` | 轻量存活探针 |
+| GET | `/v1/healthz` | 轻量存活探针；含 `service_version`、`contract_version`、`tag_contract` |
+| GET | `/v1/contract` | **只读**机读契约清单：event/emotion/memory/error 版本与字段 |
 
 `available=true` 表示**厂商已配置/自定义提供方已启用**，不保证网络可达；实际不可达会在请求时返回
 可读错误（自定义提供方不跨提供方静默回退）。

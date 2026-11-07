@@ -67,3 +67,49 @@ def tag_contract() -> dict[str, Any]:
             "legacy_aliases": dict(LEGACY_EMOTION_ALIASES),
         },
     }
+
+
+# Third-party callers validate these. `service_version` is separate on purpose:
+# contract versions only change on breaking wire changes, while the package
+# version changes on every release.
+EVENT_CONTRACT_VERSION = "1.0"
+ERROR_CONTRACT_VERSION = "1.0"
+
+
+def contract_manifest(service_version: str, memory_contract_version: str) -> dict[str, Any]:
+    """Machine-readable contract surface for downstream integrators."""
+    return {
+        "service": "omninexus",
+        "service_version": service_version,
+        "contracts": {
+            "event": {
+                "version": EVENT_CONTRACT_VERSION,
+                "required_fields": ["event_id", "session_id", "content", "stream", "tags"],
+                "tag_fields": ["emotion", "type", "intent"],
+                "content_types": ["text", "code", "list", "table", "json", "mixed"],
+                "intents": ["reply", "tool", "linkage"],
+            },
+            "emotion": {
+                "version": EMOTION_CONTRACT_VERSION,
+                "labels": list(PUBLIC_EMOTION_LABELS),
+                "legacy_aliases": dict(LEGACY_EMOTION_ALIASES),
+            },
+            "memory": {
+                "version": memory_contract_version,
+                "status": "reserved",
+                "default_enabled": False,
+            },
+            "error": {
+                "version": ERROR_CONTRACT_VERSION,
+                "fields": ["code", "message", "retryable", "details", "request_id"],
+                "request_id_header": "X-Request-ID",
+            },
+        },
+        "compatibility": {
+            "policy": "major_reject_minor_degrade",
+            "description": (
+                "Consumers should reject an incompatible contract major version, "
+                "and degrade with a warning for additive minor changes."
+            ),
+        },
+    }

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.3 — 2026-11-07
+
+### Added
+
+- `GET /v1/contract`：只读机读契约端点，含 event / emotion / memory / error 版本、12 类情绪、
+  旧别名与不兼容处理策略。
+- `GET /v1/healthz` 增加 `service_version`、`contract_version`、`tag_contract`。
+
+### Fixed
+
+- **旧会话兼容**：0.3.1 之前创建、拆分字段为 NULL 且**尚无模型回答**的会话，首次对话自动
+  迁移到当前可用默认，`meta.recovered_default=true`；**已有回答的会话保持原模型**。
+- 旧会话不可用时，409 的 `message` 说明当前模型与建议目标，`details.suggested` 给出
+  `providerKind/providerId/model`，不再只提示“重新选择”。
+- `OmniError` 响应体补 `request_id`，与 `X-Request-ID` 一致；错误契约字段齐备。
+
+### Changed
+
+- 文档明确版本语义：`service_version`（包版本）≠ `contract_version`（契约版本）。
+- 文档固化错误体字段与 12 类情绪为唯一权威列表。
+
 ## 0.3.2 — 2026-11-07
 
 ### Fixed

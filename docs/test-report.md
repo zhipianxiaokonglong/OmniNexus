@@ -1,6 +1,6 @@
 # 测试与自评估报告
 
-- 版本：OmniNexus 0.3.2（Issue #1 修复）
+- 版本：OmniNexus 0.3.3（跨仓库契约 + 旧会话兼容）
 - 任务书：v1.1 + 自定义提供方需求；外部记忆管线仍为 Reserved
 - 测试日期：2026-11-07
 - 环境：Windows 11（amd64），Python 3.13.9，pytest 8.x，httpx MockTransport，SQLite 3
@@ -10,7 +10,7 @@
 ## 1. 结果摘要
 
 ```text
-80 passed
+86 passed
 ruff check: All checks passed
 coverage: 81% statements/branches (见 §9)
 ```
@@ -66,6 +66,12 @@ coverage: 81% statements/branches (见 §9)
 | `test_default_model_falls_back_to_only_configured_provider` | 单厂商首跑默认回退 | PASS |
 | `test_model_limit_is_readable_at_boundary` | 199/200 接受；201/300 可读 422 | PASS |
 | `test_new_session_uses_provider_defaults_not_gateway_default` | 新建会话使用设置默认 | PASS |
+| `test_legacy_session_recovers_to_defaults_when_empty` | 空旧会话自动跟随默认 | PASS |
+| `test_legacy_session_with_history_returns_actionable_409` | 有回答旧会话保持原模型 + 可读 409 | PASS |
+| `test_contract_endpoint_publishes_machine_readable_versions` | event/emotion/memory/error 契约 | PASS |
+| `test_healthz_exposes_service_and_contract_versions` | 包版本与契约版本分离 | PASS |
+| `test_error_envelope_has_retryable_and_request_id` | 错误体字段齐备 | PASS |
+| `test_provider_defaults_match_actual_turn_model` | 设置默认与 SSE 实际模型一致 | PASS |
 
 ## 4. 故障注入矩阵
 
@@ -198,6 +204,18 @@ coverage: 81% statements/branches (见 §9)
 - **O-05**：引用 URL 默认不进入正文；citations 事件/API 保留；可配置内嵌。
 - **O-06**：0.3.0 + tag + COMPATIBILITY/发布说明。
 
+### R-11 跨仓库契约漂移（0.3.3）
+
+- **现象**：`/v1/provider-defaults` 与对话实际模型不一致；契约版本无消费入口；旧会话 409 不可读。
+- **根因**：声明路径、执行路径、可观测路径三者未对齐。
+- **修复**：
+  1. 新增只读 `GET /v1/contract`，暴露 event/emotion/memory/error 版本与字段；
+  2. `/v1/healthz` 补 `service_version` / `contract_version` / `tag_contract`；
+  3. 空旧会话自动迁移、有回答旧会话 409 带 `details.suggested`；
+  4. `OmniError` 补 `request_id`，与响应头一致。
+- **文档**：版本语义分离（包版本 ≠ 契约版本）；不兼容策略 `major_reject_minor_degrade`；
+  12 类情绪为唯一权威列表。
+
 ### R-10 自定义提供方 200 模型上限不可读（Issue #1，P1）
 
 - **现象**：发现 566 个模型后保存，只显示 `Request validation failed.`。
@@ -238,7 +256,7 @@ coverage: 81% statements/branches (见 §9)
 
 ```text
 command: python -m pytest --cov=omninexus --cov-report=term -q
-TOTAL 4410 stmts, 665 miss, 1260 branches, 330 partial, 81% coverage
+TOTAL 4446 stmts, 655 miss, 1266 branches, 327 partial, 81% coverage
 ```
 
 主要模块：orchestrator 80%、gateway/router 79%、prompts 82%、sessions 83%、storage 91%、

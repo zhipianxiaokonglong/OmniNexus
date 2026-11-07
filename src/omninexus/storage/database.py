@@ -352,6 +352,18 @@ class Database:
         )
         return int(row["n"]) if row else 0
 
+    async def has_assistant_message(self, session_id: str) -> bool:
+        """Whether this session already contains a model answer.
+
+        Used to decide whether a legacy session may be recovered to the current
+        provider defaults: sessions with real history are never switched silently.
+        """
+        row = await self.fetchone(
+            "SELECT 1 AS found FROM messages WHERE session_id = ? AND role = 'assistant' LIMIT 1",
+            (session_id,),
+        )
+        return row is not None
+
     # ----- citations ----------------------------------------------------
     async def add_citations(
         self, session_id: str, event_id: str, citations: list[Citation]

@@ -195,7 +195,8 @@ API 还支持 Markdown 导出：`GET /v1/sessions/{id}/export?format=md`。
 | 保存提示“模型数量超过上限” | 单个提供方最多 200 个模型；删除多余模型，或拆成多个提供方 |
 | 发现模型只加入了一部分 | 正常：已达到 200 上限；提示会说明剩余未加入数量 |
 | 删除默认提供方被拒 | 先在“默认提供方 / 模型”切换到其他可用项 |
-| 历史会话提示提供方不可用 | 在旧会话迁移向导中手动迁移，或重新选择提供方/模型 |
+| 历史会话提示提供方不可用 | 该会话已有回答，保持原模型；按提示切到建议的默认，或用迁移向导 |
+| 历史空会话自动换了模型 | 正常：无回答的旧格式会话会自动跟随当前默认，`meta.recovered_default=true` |
 | 情感标签只有 12 类 | 正常：Emotion contract v2；旧 fear/confusion/gratitude 映射为 sadness/frustration/joy |
 | 每轮都新建会话 | 检查客户端是否把 `session_id` 放在事件顶层；放 metadata 仅兼容并会 warning |
 | `503 NO_PROVIDER_AVAILABLE` | 无任何已配置模型；填密钥或 `OMNI_ENABLE_ECHO=1` |

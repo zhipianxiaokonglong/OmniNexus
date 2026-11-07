@@ -9,6 +9,7 @@ import logging
 import httpx
 import pytest
 
+from omninexus.config import ModelConfig, ProviderConfig
 from omninexus.logging import RedactionFilter, get_logger
 from tests.conftest import Recorder, app_client, base_config, make_transport, sse_response
 
@@ -550,6 +551,127 @@ async def test_disable_default_and_session_becomes_unavailable(tmp_path) -> None
         )
         assert chat.status_code == 409
         assert chat.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_legacy_session_recovers_to_defaults_when_empty(tmp_path) -> None:
+    """A 0.3.0-era session (NULL split fields, no answer) follows the defaults."""
+    from omninexus.core.models import SessionRecord, iso_now
+
+    config = base_config(tmp_path)
+    config.gateway.default_model = "openai:gpt-4o-mini"
+    backend = CustomBackend()
+
+    async with app_client(config, transport=make_transport(backend)) as (client, app):
+        provider = await create_provider(client)
+        await client.put(
+            "/v1/provider-defaults",
+            json={
+                "providerKind": "custom",
+                "providerId": provider["id"],
+                "model": "my-model",
+            },
+        )
+        legacy_id = "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb"
+        await app.state.db.create_session(
+            SessionRecord(
+                id=legacy_id,
+                title="legacy",
+                model="openai:gpt-4o-mini",
+                prompt_profile="default",
+                created_at=iso_now(),
+                updated_at=iso_now(),
+            )
+        )
+        response = await client.post(
+            "/v1/events",
+            json={
+                "event_id": "cccccccc-3333-4333-8333-cccccccccccc",
+                "session_id": legacy_id,
+                "parts": [{"modality": "text", "content": "legacy empty session"}],
+            },
+            headers={"Accept": "text/event-stream"},
+        )
+        assert response.status_code == 200, response.text
+        meta_line = next(
+            line
+            for line in response.text.splitlines()
+            if line.startswith("data: {") and "meta" not in line
+        )
+        assert '"recovered_default":true' in meta_line.replace(" ", "")
+        detail = (await client.get(f"/v1/sessions/{legacy_id}")).json()["session"]
+        assert detail["provider_kind"] == "custom"
+        assert detail["model"] == f"custom:{provider['id']}:my-model"
+
+
+@pytest.mark.asyncio
+async def test_legacy_session_with_history_returns_actionable_409(tmp_path) -> None:
+    """A legacy session with a real answer keeps its model and explains the 409."""
+    from omninexus.core.models import SessionRecord, StoredMessage, iso_now
+
+    config = base_config(tmp_path)
+    config.gateway.default_model = "openai:gpt-4o-mini"
+    config.providers["openai"] = ProviderConfig(
+        type="openai", base_url="http://openai.test/v1", api_key_env="OPENAI_API_KEY"
+    )
+    config.models.append(
+        ModelConfig(
+            id="openai:gpt-4o-mini",
+            provider="openai",
+            model="gpt-4o-mini",
+            label="GPT-4o mini",
+            input_modalities=["text"],
+            context_window=8192,
+        )
+    )
+    backend = CustomBackend()
+
+    async with app_client(config, transport=make_transport(backend)) as (client, app):
+        provider = await create_provider(client)
+        await client.put(
+            "/v1/provider-defaults",
+            json={
+                "providerKind": "custom",
+                "providerId": provider["id"],
+                "model": "my-model",
+            },
+        )
+        legacy_id = "eeeeeeee-1111-4111-8111-eeeeeeeeeeee"
+        await app.state.db.create_session(
+            SessionRecord(
+                id=legacy_id,
+                title="legacy with answer",
+                model="openai:gpt-4o-mini",
+                prompt_profile="default",
+                created_at=iso_now(),
+                updated_at=iso_now(),
+            )
+        )
+        await app.state.db.add_message(
+            StoredMessage.new(
+                session_id=legacy_id,
+                role="assistant",
+                content="an archived answer",
+            )
+        )
+        response = await client.post(
+            "/v1/events",
+            json={
+                "event_id": "ffffffff-4444-4444-8444-ffffffffffff",
+                "session_id": legacy_id,
+                "parts": [{"modality": "text", "content": "continue"}],
+            },
+        )
+        assert response.status_code == 409
+        error = response.json()["error"]
+        assert error["code"] == "PROVIDER_UNAVAILABLE"
+        assert "openai:gpt-4o-mini" in error["message"]
+        assert "旧会话迁移向导" in error["message"]
+        assert error["details"]["reason"] == "provider_not_configured"
+        assert error["details"]["suggested"]["providerKind"] == "custom"
+        assert error["details"]["suggested"]["model"] == "my-model"
+        detail = (await client.get(f"/v1/sessions/{legacy_id}")).json()["session"]
+        assert detail["model"] == "openai:gpt-4o-mini"
 
 
 @pytest.mark.asyncio

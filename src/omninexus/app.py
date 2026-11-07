@@ -243,8 +243,14 @@ def create_app(
 
     @app.exception_handler(OmniError)
     async def omni_error_handler(request: Request, exc: OmniError) -> JSONResponse:
-        response = JSONResponse(exc.as_dict(), status_code=exc.status_code)
-        response.headers["X-Request-ID"] = getattr(request.state, "request_id", "")
+        payload = exc.as_dict()
+        request_id = getattr(request.state, "request_id", "")
+        # The error contract advertises request_id inside the body; keep the
+        # header too so proxies and clients can use either.
+        payload["error"]["request_id"] = request_id
+        payload["request_id"] = request_id
+        response = JSONResponse(payload, status_code=exc.status_code)
+        response.headers["X-Request-ID"] = request_id
         return response
 
     @app.exception_handler(RequestValidationError)

@@ -23,7 +23,12 @@ from omninexus.api.schemas import (
     VersionActivate,
 )
 from omninexus.api.sse import event_stream
-from omninexus.core.emotions import tag_contract
+from omninexus.core.emotions import (
+    EMOTION_CONTRACT_VERSION,
+    EVENT_CONTRACT_VERSION,
+    contract_manifest,
+    tag_contract,
+)
 from omninexus.core.models import InboundEvent, SessionRecord, iso_now
 from omninexus.errors import ErrorCode, OmniError
 from omninexus.prompts.manager import PromptManager
@@ -447,8 +452,27 @@ async def health(request: Request) -> dict[str, Any]:
 
 
 @router.get("/healthz")
-async def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+async def healthz(request: Request) -> dict[str, Any]:
+    """Liveness probe that also exposes contract versions.
+
+    ``service_version`` is the package version; ``contract_version`` is the
+    wire-contract version and only changes on breaking changes.
+    """
+    return {
+        "status": "ok",
+        "service_version": __version__,
+        "contract_version": EVENT_CONTRACT_VERSION,
+        "tag_contract": EMOTION_CONTRACT_VERSION,
+    }
+
+
+@router.get("/contract")
+async def contract(request: Request) -> dict[str, Any]:
+    """Read-only machine-readable contract surface (no session, no secrets)."""
+    return contract_manifest(
+        __version__,
+        request.app.state.config.memory.contract_version,
+    )
 
 
 @router.get("/memory/status")

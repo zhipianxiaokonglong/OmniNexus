@@ -4,6 +4,7 @@
 
 | OmniNexus | Event contract | Emotion tag contract | Memory contract | Python |
 | --- | --- | --- | --- | --- |
+| 0.3.3 | 1.0（字段不变） | **2**（12 类） | 1.0（Reserved） | 3.11+ |
 | 0.3.2 | 1.0（字段不变） | **2**（12 类） | 1.0（Reserved） | 3.11+ |
 | 0.3.1 | 1.0（字段不变） | 2（12 类） | 1.0（Reserved） | 3.11+ |
 | 0.3.0 | 1.0（字段不变） | 2（12 类） | 1.0（Reserved） | 3.11+ |
@@ -72,12 +73,41 @@ event_id, session_id, content, stream, tags{emotion,type,intent}
 - `discover-models` 返回上游全集，设置页按剩余容量截断；
 - 201 条及以上返回 422 `INVALID_INPUT`，`message` 含“最多 200 个模型”。
 
-### 4.2 默认提供方/模型（0.3.0 修复）
+### 4.2 默认提供方/模型
 
 - 新建会话会持久化 `GET/PUT /v1/provider-defaults` 的结果；
 - `gateway.default_model` 仅作为**未设置用户默认**时的初始回退，不再遮蔽设置页默认；
-- 已有会话继续使用其记录中的模型；提供方不可用时返回 `409 PROVIDER_UNAVAILABLE`，不做静默迁移。
+- **旧格式会话**（0.3.1 之前创建、拆分字段为 NULL）若**尚无模型回答**，首次对话会自动迁移到
+  当前可用默认，`meta.recovered_default=true`；
+- **已有回答的会话**保持原模型，不静默迁移；其提供方不可用时返回 `409
+  PROVIDER_UNAVAILABLE`，`message` 说明当前模型与建议目标，`details.suggested` 给出
+  `providerKind/providerId/model`；
+- 显式创建并带拆分字段的会话，即使提供方被禁用也不会被自动改写。
 
-## 5. 端口
+## 5. 版本语义（跨仓库契约）
+
+| 字段 | 位置 | 含义 | 何时变化 |
+|---|---|---|---|
+| `service_version` | `/v1/healthz`、`/v1/contract` | 模块/包版本 | 每次发布 |
+| `contract_version` | `/v1/healthz` | Event 契约版本 | 仅破坏性变更 |
+| `tag_contract` | `/v1/healthz` | Emotion 契约版本（当前 `2`） | 仅破坏性变更 |
+| `contracts.*.version` | `/v1/contract` | 各契约独立版本 | 各自破坏性变更 |
+
+**不要混用**：`service_version` 变不代表契约不兼容。
+
+不兼容处理策略（`/v1/contract` 的 `compatibility.policy` =
+`major_reject_minor_degrade`）：
+
+- **主版本不兼容** → 消费方应拒绝请求并告警；
+- **次版本新增**（如新增情绪标签）→ 消费方降级并告警，不中断对话。
+
+`/v1/contract` 为只读端点，不读写会话、不返回密钥。
+
+## 6. 情绪标签以 12 类为准
+
+`/v1/contract` 的 `contracts.emotion.labels` 即唯一权威列表。旧 9 类视为历史版本，
+消费方应通过 `legacy_aliases` 映射，不要反向要求生产方收敛。
+
+## 7. 端口
 
 默认 `8000`。跨仓库共存时请在启动脚本显式指定端口并检查占用，不使用隐式默认。

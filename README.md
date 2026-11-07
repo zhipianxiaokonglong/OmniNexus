@@ -11,8 +11,11 @@ OmniNexus 接收上游多模态输入事件，完成模型路由、提示词渲�
 
 ---
 
-## 当前范围（v0.3.2）
+## 当前范围（v0.3.3）
 
+- **跨仓库契约**：新增只读 `GET /v1/contract`；`/v1/healthz` 暴露 `service_version`、
+  `contract_version`、`tag_contract`；版本语义与不兼容策略已文档化。
+- **旧会话兼容**：无回答的 0.3.1 前旧会话自动跟随当前默认；有回答的保持原模型并返回可读 409。
 - **Issue #1 修复**：自定义提供方超过 200 个模型时返回可读 422；设置页显示字段级错误、
   按上限截断“发现模型”，并显示 `当前 / 200` 计数。
 - **审计修复**：Emotion contract v2（12 类）、session 信号、引用正文策略、默认模型首跑回退与
@@ -185,7 +188,8 @@ python -m ruff check src tests
 python -m pytest --cov=omninexus --cov-report=term-missing
 ```
 
-80 个自动化测试覆盖：Emotion contract v2、metadata/session 信号、引用正文策略、默认提供方、
+86 个自动化测试覆盖：跨仓库契约端点/版本、旧会话迁移与 409、Emotion contract v2、
+metadata/session 信号、引用正文策略、默认提供方、
 自定义提供方 CRUD/Key 加密/测试分级/模型发现/200 上限/默认设置/导入导出/迁移、
 多模型切换与上下文延续、重试/回退、限流、超时、能力协商、SSE 契约、提示词版本化、
 存档导出/删除、搜索隐私、密钥脱敏、保留记忆插件的禁用/超时/故障零影响等。
@@ -207,6 +211,7 @@ python -m pytest --cov=omninexus --cov-report=term-missing
 | [测试报告](docs/test-report.md) | 用例、故障注入、根因分析、限制 |
 | [验收对照](docs/acceptance.md) | 需求 → 证据映射 |
 | [兼容性矩阵](docs/COMPATIBILITY.md) | 版本、Emotion v2、Event v1、Session 信号 |
+| [0.3.3 发布说明](docs/releases/v0.3.3.md) | 契约端点、旧会话兼容、版本语义 |
 | [0.3.2 发布说明](docs/releases/v0.3.2.md) | Issue #1：200 模型上限可读错误与前端截断 |
 | [0.3.1 发布说明](docs/releases/v0.3.1.md) | 默认提供方 hotfix |
 | [0.3.0 发布说明](docs/releases/v0.3.0.md) | Emotion v2、引用策略、session 信号 |

@@ -74,6 +74,7 @@ class PreparedTurn:
     dropped_messages: int = 0
     session_created: bool = False
     legacy_session_id: bool = False
+    recovered_default: bool = False
 
 
 @dataclass(slots=True)
@@ -192,15 +193,62 @@ class Orchestrator:
 
         kind, provider_id, model_name, explicit = self._select_model(metadata, session, defaults)
         requested_model = self.providers.canonical_ref(kind, provider_id, model_name)
+        recovered_default = False
         if not created and not explicit and requested_model == session.model:
             available, reason = await self.providers.session_availability(session)
             if not available:
-                raise OmniError(
-                    ErrorCode.PROVIDER_UNAVAILABLE,
-                    "当前会话使用的提供方不可用，请重新选择提供方和模型。",
-                    status_code=409,
-                    details={"reason": reason},
+                # Legacy sessions created before 0.3.1 were stamped with the
+                # static gateway.default_model and have NULL split fields. If
+                # they hold no model answer yet, recover them to the user's
+                # current defaults. Sessions with real history keep their model
+                # and get an actionable 409 instead of a silent switch.
+                # Only legacy sessions (created before 0.3.1, split fields NULL)
+                # are recovery candidates. Sessions explicitly created with a
+                # model keep it, even when that provider is later disabled.
+                can_recover = (
+                    not (session.provider_kind and session.provider_id and session.model_name)
+                    and not await self.db.has_assistant_message(session.id)
                 )
+                default_usable = await self.providers.validate_target(
+                    defaults.provider_kind, defaults.provider_id, defaults.model
+                )
+                if can_recover and default_usable:
+                    kind, provider_id, model_name = (
+                        defaults.provider_kind,
+                        defaults.provider_id,
+                        defaults.model,
+                    )
+                    requested_model = self.providers.canonical_ref(kind, provider_id, model_name)
+                    session = await self.sessions.update(
+                        session.id,
+                        {
+                            "model": requested_model,
+                            "provider_kind": kind,
+                            "provider_id": provider_id,
+                            "model_name": model_name,
+                        },
+                    )
+                    recovered_default = True
+                    log.info(
+                        "session_recovered_to_defaults event_id=%s session_id=%s",
+                        normalized.event_id,
+                        session.id,
+                    )
+                else:
+                    raise OmniError(
+                        ErrorCode.PROVIDER_UNAVAILABLE,
+                        self._unavailable_message(session, reason, defaults),
+                        status_code=409,
+                        details={
+                            "reason": reason,
+                            "current_model": requested_model,
+                            "suggested": {
+                                "providerKind": defaults.provider_kind,
+                                "providerId": defaults.provider_id,
+                                "model": defaults.model,
+                            },
+                        },
+                    )
         if kind == "custom":
             snapshot = self.providers.get_custom(provider_id)
             if not snapshot or not snapshot.provider.enabled:
@@ -328,6 +376,31 @@ class Orchestrator:
             dropped_messages=built.dropped_messages,
             session_created=created,
             legacy_session_id=normalized.legacy_session_id,
+            recovered_default=recovered_default,
+        )
+
+    def _unavailable_message(
+        self,
+        session: SessionRecord,
+        reason: str | None,
+        defaults: Any,
+    ) -> str:
+        """Explain *which* model failed and what the user can do next."""
+        current = session.model or "unknown"
+        suggested = self.providers.canonical_ref(
+            defaults.provider_kind, defaults.provider_id, defaults.model
+        )
+        reasons = {
+            "provider_not_configured": "该提供方未配置密钥",
+            "provider_disabled": "该提供方已禁用",
+            "provider_deleted": "该提供方已删除",
+            "model_deleted": "该模型已删除",
+            "no_model": "该会话没有可用模型",
+        }
+        detail = reasons.get(reason or "", "该提供方当前不可用")
+        return (
+            f"当前会话使用的模型 {current} 不可用（{detail}）。"
+            f"可在聊天页切换到 {suggested}，或使用旧会话迁移向导。"
         )
 
     def _select_model(
@@ -491,6 +564,7 @@ class Orchestrator:
             "dropped_messages": prepared.dropped_messages,
             "session_created": prepared.session_created,
             "legacy_session_id": prepared.legacy_session_id,
+            "recovered_default": prepared.recovered_default,
             "tag_contract": tag_contract(),
         }
 
