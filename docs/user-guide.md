@@ -71,6 +71,7 @@ python -m omninexus
 3. 填写名称、Base URL（例如 `https://api.example.com/v1`）；
 4. 填写 API Key（本地无鉴权可留空）；保存后只显示掩码；
 5. 手动添加模型，或点击“从 /models 拉取”；选择能力预设（文本/视觉/上下文窗口）；
+   单个提供方最多 **200** 个模型；上游返回更多时只加入未满的部分，并提示超出数量；
 6. 点击“测试连接”，成功或“未验证”后保存；
 7. 在“默认提供方 / 模型”中设为默认，或回到聊天页选择。
 
@@ -171,6 +172,11 @@ API 还支持 Markdown 导出：`GET /v1/sessions/{id}/export?format=md`。
 备份：停止服务后复制整个 `data/`。迁移到另一台机器时同时迁移 `.env`（妥善保管）。
 自定义提供方的 Key 依赖 `data/provider-secrets.key`；只迁移数据库会无法解密 Key，需要重新填写。
 
+> **`OMNI_DATA_DIR` 必须是最终目录。** OmniNexus 不会在此路径下再派生模块名或
+> `omninexus/` 子目录。启动器若传入 `{data_dir}/omninexus`，实际数据库会落在
+> `{data_dir}/omninexus/omninexus.db`；若外层又按模块 id 嵌套，会出现双层空库。
+> 请由启动器传最终私有目录（如 `{data_dir}`），不要由应用侧推断。
+
 ## 5. 保留扩展：外部记忆
 
 本期**未接入**外部记忆管线，默认禁用。正式记忆来自本地存档 + 最近窗口。`GET /v1/memory/status`
@@ -186,6 +192,8 @@ API 还支持 Markdown 导出：`GET /v1/sessions/{id}/export?format=md`。
 | 自定义提供方测试 401 | 鉴权失败，检查 API Key；确认 Base URL 与协议 |
 | 自定义提供方测试 404 | 检查 Base URL 是否包含 `/v1`；本系统严格拼接，不自动补 |
 | 模型列表拉取失败 | 允许手动填写模型名；先确认 `/models` 是否受支持 |
+| 保存提示“模型数量超过上限” | 单个提供方最多 200 个模型；删除多余模型，或拆成多个提供方 |
+| 发现模型只加入了一部分 | 正常：已达到 200 上限；提示会说明剩余未加入数量 |
 | 删除默认提供方被拒 | 先在“默认提供方 / 模型”切换到其他可用项 |
 | 历史会话提示提供方不可用 | 在旧会话迁移向导中手动迁移，或重新选择提供方/模型 |
 | 情感标签只有 12 类 | 正常：Emotion contract v2；旧 fear/confusion/gratitude 映射为 sadness/frustration/joy |

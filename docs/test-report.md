@@ -1,8 +1,8 @@
 # 测试与自评估报告
 
-- 版本：OmniNexus 0.3.1（审计修复 + 默认提供方 hotfix）
+- 版本：OmniNexus 0.3.2（Issue #1 修复）
 - 任务书：v1.1 + 自定义提供方需求；外部记忆管线仍为 Reserved
-- 测试日期：2026-11-05
+- 测试日期：2026-11-07
 - 环境：Windows 11（amd64），Python 3.13.9，pytest 8.x，httpx MockTransport，SQLite 3
 - 真实付费厂商：**未调用**（无密钥，CI 也不调用）
 - 测试数据：临时目录，运行后删除；仓库不含对话/日志/数据库/测试人格
@@ -10,7 +10,7 @@
 ## 1. 结果摘要
 
 ```text
-79 passed
+80 passed
 ruff check: All checks passed
 coverage: 81% statements/branches (见 §9)
 ```
@@ -64,6 +64,8 @@ coverage: 81% statements/branches (见 §9)
 | `test_emotion_contract_v2_labels_and_legacy_aliases` | 12 类、旧标签归一 | PASS |
 | `test_citations_in_content_opt_in` | 默认正文无 URL，开启后追加 | PASS |
 | `test_default_model_falls_back_to_only_configured_provider` | 单厂商首跑默认回退 | PASS |
+| `test_model_limit_is_readable_at_boundary` | 199/200 接受；201/300 可读 422 | PASS |
+| `test_new_session_uses_provider_defaults_not_gateway_default` | 新建会话使用设置默认 | PASS |
 
 ## 4. 故障注入矩阵
 
@@ -131,6 +133,7 @@ coverage: 81% statements/branches (见 §9)
 | Key 展示 | 卡片显示 `sk-****1234`，无完整 Key |
 | 页面截图 | 无遮挡、无空白模态框（修复 `[hidden]` 后） |
 | 审计修复（v0.3.0） | Emotion v2 12 类、旧标签归一、session 信号、引用默认不进入正文，均通过自动化；SSE/health 实测 tag_contract=2 |
+| Issue #1（v0.3.2，Edge CDP） | 上游 mock 566 个模型：页面只渲染 200 行、计数 `200 / 200`、提示“另有 366 个未加入”、保存成功且 API 返回 200 个模型；“手动添加”到顶禁用 |
 
 浏览器自动化不是 CI 的一部分（本机 Edge 驱动不稳定）；CI 覆盖 API/SSE 契约。
 
@@ -184,13 +187,29 @@ coverage: 81% statements/branches (见 §9)
 - **回归**：headless 截图 + DOM 检查；后续可加视觉回归。
 - **预防**：组件显隐用显式 class 或统一 `[hidden]` 规则。
 
-### R-09 审计条目修复（v0.3.0）\n- **Dounai 2026-11-05**：新建会话被 `gateway.default_model` 遮蔽；修复为先取 `provider-defaults` 再创建会话，并统一 `model` 与拆分字段。
+### R-09 审计条目修复（v0.3.0）
+
+- **Dounai 2026-11-05**：新建会话被 `gateway.default_model` 遮蔽；修复为先取
+  `provider-defaults` 再创建会话，并统一 `model` 与拆分字段。
 - **O-01**：Emotion 9->12，旧标签归一；`tag_contract`/header/meta 校验。
 - **O-02**：metadata 只声明生效键；`metadata.session_id` 兼容回退并 warning。
 - **O-03**：默认模型优先同厂商已配置模型；`/v1/health.default` 可观测。
 - **O-04**：缺会话 ID warning + `session_created` 信号。
 - **O-05**：引用 URL 默认不进入正文；citations 事件/API 保留；可配置内嵌。
-- **O-06**：0.3.0 + tag + COMPATIBILITY/发布说明；本次按要求不推送 GitHub。
+- **O-06**：0.3.0 + tag + COMPATIBILITY/发布说明。
+
+### R-10 自定义提供方 200 模型上限不可读（Issue #1，P1）
+
+- **现象**：发现 566 个模型后保存，只显示 `Request validation failed.`。
+- **直接原因**：Pydantic `max_length=200` 先于业务层拒绝；422 处理器使用固定文案；
+  前端只读 `message`；发现模型全量渲染。
+- **修复（0.3.2）**：
+  1. 422 `message` 对 `models` 输出“最多 200 个模型”；
+  2. 设置页新增字段级错误条；
+  3. 发现模型按剩余容量截断并提示超出数量；
+  4. 模型计数 `当前 / 200`，到顶禁用“手动添加”；
+  5. 新增 `test_model_limit_is_readable_at_boundary`（199/200 接受，201/300 可读拒绝）。
+- **不变**：200 上限保留；`discover-models` 仍返回全集。
 
 ### R-07 导入配置 422：导出文件根字段被拒绝（P2）
 
@@ -219,7 +238,7 @@ coverage: 81% statements/branches (见 §9)
 
 ```text
 command: python -m pytest --cov=omninexus --cov-report=term -q
-TOTAL 4394 stmts, 662 miss, 1252 branches, 327 partial, 81% coverage
+TOTAL 4410 stmts, 665 miss, 1260 branches, 330 partial, 81% coverage
 ```
 
 主要模块：orchestrator 80%、gateway/router 79%、prompts 82%、sessions 83%、storage 91%、

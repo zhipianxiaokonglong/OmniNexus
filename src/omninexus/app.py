@@ -39,6 +39,48 @@ log = get_logger("app")
 _STATIC = Path(__file__).parent / "static"
 
 
+_MODEL_LIMIT_MESSAGE = "模型数量超过上限：单个提供方最多 200 个模型，请减少模型后重试。"
+_VALIDATION_MESSAGES = {
+    "name": "提供方名称不合法，请检查长度。",
+    "base_url": "Base URL 不合法，请填写 http(s) 绝对地址。",
+    "api_key": "API Key 不合法或过长。",
+    "default_model": "默认模型不合法。",
+    "timeout_seconds": "测试超时必须为 1–120 秒。",
+}
+
+
+def _validation_message(fields: list[dict[str, Any]]) -> str:
+    """Turn the first field error into an actionable message.
+
+    FastAPI/Pydantic errors already contain the real cause, but exposing a fixed
+    "Request validation failed." made the 200-model limit undiscoverable.
+    """
+    if not fields:
+        return "请求参数校验失败。"
+    first = fields[0]
+    field = str(first.get("field") or "")
+    reason = str(first.get("reason") or "").strip()
+    root = field.split(".", 1)[0]
+    if field == "models":
+        if "items" in reason or "too_long" in reason:
+            return _MODEL_LIMIT_MESSAGE
+        if "at least" in reason or "too_short" in reason:
+            return "至少需要添加一个模型。"
+    # Pydantic may report either the alias or the Python field name.
+    alias = {
+        "baseUrl": "base_url",
+        "apiKey": "api_key",
+        "defaultModel": "default_model",
+        "timeoutSeconds": "timeout_seconds",
+    }.get(root, root)
+    friendly = _VALIDATION_MESSAGES.get(alias)
+    if friendly:
+        return friendly
+    if field and reason:
+        return f"参数 {field} 校验失败：{reason}"
+    return "请求参数校验失败。"
+
+
 def _json_error(
     code: ErrorCode,
     message: str,
@@ -211,9 +253,10 @@ def create_app(
         for error in exc.errors():
             location = ".".join(str(part) for part in error.get("loc", []) if part != "body")
             fields.append({"field": location[:120], "reason": str(error.get("msg"))[:200]})
+        message = _validation_message(fields)
         return _json_error(
             ErrorCode.INVALID_INPUT,
-            "Request validation failed.",
+            message,
             422,
             request,
             {"fields": fields[:10]},

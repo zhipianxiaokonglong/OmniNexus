@@ -326,6 +326,66 @@ async def test_custom_capability_routes_within_provider(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_model_limit_is_readable_at_boundary(tmp_path) -> None:
+    """Issue #1: 200 is accepted, 201 is rejected with an actionable message."""
+    config = base_config(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    def models(count: int) -> list[dict]:
+        return [
+            {"name": f"model-{index}", "capabilities": capabilities("text")}
+            for index in range(count)
+        ]
+
+    async with app_client(config, transport=make_transport(handler)) as (client, _):
+        accepted = await client.post(
+            "/v1/custom-providers",
+            json={
+                "name": "at-limit",
+                "baseUrl": "http://custom.test/v1",
+                "models": models(200),
+                "defaultModel": "model-0",
+            },
+        )
+        assert accepted.status_code == 201, accepted.text
+
+        rejected = await client.post(
+            "/v1/custom-providers",
+            json={
+                "name": "over-limit",
+                "baseUrl": "http://custom.test/v1",
+                "models": models(201),
+                "defaultModel": "model-0",
+            },
+        )
+        assert rejected.status_code == 422
+        payload = rejected.json()["error"]
+        assert payload["code"] == "INVALID_INPUT"
+        assert "最多 200" in payload["message"]
+        assert "Request validation failed" not in payload["message"]
+        assert payload["details"]["fields"][0]["field"] == "models"
+
+        provider = accepted.json()["provider"]
+        update_rejected = await client.put(
+            f"/v1/custom-providers/{provider['id']}",
+            json={
+                "name": provider["name"],
+                "baseUrl": provider["baseUrl"],
+                "headers": {},
+                "protocol": "openai-compatible",
+                "timeoutSeconds": 10,
+                "enabled": True,
+                "models": models(300),
+                "defaultModel": "model-0",
+            },
+        )
+        assert update_rejected.status_code == 422
+        assert "最多 200" in update_rejected.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_new_session_uses_provider_defaults_not_gateway_default(tmp_path) -> None:
     """Dounai audit 2026-11-05: settings defaults must drive new sessions."""
     config = base_config(tmp_path)

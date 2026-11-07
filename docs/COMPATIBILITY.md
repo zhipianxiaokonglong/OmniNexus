@@ -4,7 +4,8 @@
 
 | OmniNexus | Event contract | Emotion tag contract | Memory contract | Python |
 | --- | --- | --- | --- | --- |
-| 0.3.1 | 1.0（字段不变） | **2**（12 类） | 1.0（Reserved） | 3.11+ |
+| 0.3.2 | 1.0（字段不变） | **2**（12 类） | 1.0（Reserved） | 3.11+ |
+| 0.3.1 | 1.0（字段不变） | 2（12 类） | 1.0（Reserved） | 3.11+ |
 | 0.3.0 | 1.0（字段不变） | 2（12 类） | 1.0（Reserved） | 3.11+ |
 | 0.2.x | 1.0 | 1（9 类，历史） | 1.0（Reserved） | 3.11+ |
 | 0.1.x | 1.0 | 1（9 类，历史） | — | 3.11+ |
@@ -65,7 +66,13 @@ event_id, session_id, content, stream, tags{emotion,type,intent}
 
 `metadata.session_id` 只在顶层缺失时回退；会写 warning（只含 event_id），不写对话内容。
 
-### 4.1 默认提供方/模型（0.3.0 修复）
+### 4.1 自定义提供方模型上限
+
+- 单个提供方最多 **200** 个模型（0.3.2 起错误信息可读）；
+- `discover-models` 返回上游全集，设置页按剩余容量截断；
+- 201 条及以上返回 422 `INVALID_INPUT`，`message` 含“最多 200 个模型”。
+
+### 4.2 默认提供方/模型（0.3.0 修复）
 
 - 新建会话会持久化 `GET/PUT /v1/provider-defaults` 的结果；
 - `gateway.default_model` 仅作为**未设置用户默认**时的初始回退，不再遮蔽设置页默认；

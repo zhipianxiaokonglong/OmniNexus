@@ -143,8 +143,8 @@
       <div class="models-editor">
         <div class="models-head">
           <div>
-            <h3>模型与能力</h3>
-            <p>能力声明用于多模态路由和上下文裁剪。未测试的模型显示“未验证”。</p>
+            <h3>模型与能力 <span class="model-count" id="model-count">0 / 200</span></h3>
+            <p>能力声明用于多模态路由和上下文裁剪；单个提供方最多 200 个模型。</p>
           </div>
           <div class="row-actions">
             <label class="field default-model-field">
@@ -155,6 +155,7 @@
             <button class="secondary" id="add-model-row" type="button">＋ 手动添加</button>
           </div>
         </div>
+        <div class="form-error" id="provider-form-error" hidden></div>
         <div id="model-rows" class="model-rows"></div>
       </div>
 

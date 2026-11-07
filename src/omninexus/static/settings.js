@@ -13,6 +13,8 @@ const S = {
   migrationSelected: new Set(),
 };
 
+const MAX_MODELS = 200;
+
 const STATUS_LABELS = {
   success: "成功",
   unverified: "未验证",
@@ -236,11 +238,20 @@ function openForm(provider = null) {
     addModelRow();
   }
   refreshDefaultModelOptions(provider?.defaultModel);
+  updateModelCount();
+  clearFormError();
   updateUrlPreview();
   $("provider-form-card").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function addModelRow(model = null) {
+  const existing = [...$("model-rows").children].filter(
+    (row) => row.querySelector(".m-name").value.trim(),
+  ).length;
+  if (existing >= MAX_MODELS) {
+    showFormError({ message: `模型数量超过上限：单个提供方最多 ${MAX_MODELS} 个模型。` });
+    return;
+  }
   const row = document.createElement("div");
   row.className = "model-row";
   const name = model?.name || "";
@@ -273,10 +284,15 @@ function addModelRow(model = null) {
     row.remove();
     if (!$("model-rows").children.length) addModelRow();
     refreshDefaultModelOptions();
+    updateModelCount();
   });
-  row.querySelector(".m-name").addEventListener("input", () => refreshDefaultModelOptions());
+  row.querySelector(".m-name").addEventListener("input", () => {
+    refreshDefaultModelOptions();
+    updateModelCount();
+  });
   $("model-rows").appendChild(row);
   refreshDefaultModelOptions();
+  updateModelCount();
 }
 
 function refreshDefaultModelOptions(preferred = null) {
@@ -376,8 +392,12 @@ function formPayload() {
 }
 
 async function saveProvider() {
+  clearFormError();
   try {
     const payload = formPayload();
+    if (payload.models.length > MAX_MODELS) {
+      throw new Error(`模型数量超过上限：单个提供方最多 ${MAX_MODELS} 个模型。`);
+    }
     if (S.editing) {
       await api(`/v1/custom-providers/${S.editing.id}`, {
         method: "PUT", body: JSON.stringify(payload),
@@ -390,11 +410,51 @@ async function saveProvider() {
     $("provider-form-card").hidden = true;
     await load();
   } catch (error) {
+    showFormError(error);
     toast(error.message, true);
   }
 }
 
+function showFormError(error) {
+  const box = $("provider-form-error");
+  const fields = error?.details?.fields;
+  let message = error?.message || "保存失败";
+  const generic = message === "Request validation failed.";
+  if (Array.isArray(fields) && fields.length) {
+    const first = fields[0];
+    if (first?.field === "models" && generic) {
+      message = `模型数量超过上限：单个提供方最多 ${MAX_MODELS} 个模型，请减少模型后重试。`;
+    } else if (first?.field && first?.reason && (generic || !message)) {
+      message = `${first.field}：${first.reason}`;
+    }
+  }
+  box.textContent = message;
+  box.hidden = false;
+}
+
+function clearFormError() {
+  const box = $("provider-form-error");
+  if (box) {
+    box.hidden = true;
+    box.textContent = "";
+  }
+}
+
+function updateModelCount() {
+  const count = [...$("model-rows").children].filter(
+    (row) => row.querySelector(".m-name").value.trim(),
+  ).length;
+  const label = $("model-count");
+  if (label) {
+    label.textContent = `${count} / ${MAX_MODELS}`;
+    label.classList.toggle("over", count > MAX_MODELS);
+  }
+  const addButton = $("add-model-row");
+  if (addButton) addButton.disabled = count >= MAX_MODELS;
+}
+
 async function discover() {
+  clearFormError();
   try {
     const payload = {
       baseUrl: $("provider-base-url").value.trim().replace(/\/+$/, ""),
@@ -408,15 +468,38 @@ async function discover() {
       ? `/v1/custom-providers/${S.editing.id}/discover-models`
       : "/v1/custom-providers/discover-models";
     const data = await api(path, { method: "POST", body: JSON.stringify(payload) });
-    const existing = new Set(
-      [...$("model-rows").children].map((row) => row.querySelector(".m-name").value.trim()).filter(Boolean),
-    );
-    let added = 0;
-    for (const name of data.models || []) {
-      if (!existing.has(name)) { addModelRow({ name, capabilities: S.presets["text-basic"] }); added += 1; }
+    // Drop empty placeholder row(s) before filling, so the DOM never exceeds
+    // the visible cap (Issue #1: 566 rows froze the page).
+    for (const row of [...$("model-rows").children]) {
+      if (!row.querySelector(".m-name").value.trim()) row.remove();
     }
-    toast(added ? `已添加 ${added} 个模型；请测试连接` : "没有发现新模型；可手动填写");
+    const existing = new Set(
+      [...$("model-rows").children]
+        .map((row) => row.querySelector(".m-name").value.trim())
+        .filter(Boolean),
+    );
+    let remaining = MAX_MODELS - existing.size;
+    let added = 0;
+    let skipped = 0;
+    for (const name of data.models || []) {
+      if (existing.has(name)) continue;
+      if (remaining <= 0) { skipped += 1; continue; }
+      addModelRow({ name, capabilities: S.presets["text-basic"] });
+      existing.add(name);
+      remaining -= 1;
+      added += 1;
+    }
+    if (!$("model-rows").children.length) addModelRow();
+    updateModelCount();
+    if (skipped) {
+      const message = `已加入 ${added} 个模型；另有 ${skipped} 个模型超过 ${MAX_MODELS} 个上限，未加入。请减少模型或使用其他提供方。`;
+      showFormError({ message, details: { fields: [{ field: "models" }] } });
+      toast(message, true);
+    } else {
+      toast(added ? `已添加 ${added} 个模型；请测试连接` : "没有发现新模型；可手动填写");
+    }
   } catch (error) {
+    showFormError(error);
     toast(error.message, true);
   }
 }

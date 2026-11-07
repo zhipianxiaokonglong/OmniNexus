@@ -292,8 +292,8 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 | PATCH | `/v1/custom-providers/{id}/enabled` | 启用/禁用 |
 | POST | `/v1/custom-providers/test` | 未保存配置测试（可带 `id` 复用已保存 Key） |
 | POST | `/v1/custom-providers/{id}/test` | 已保存配置测试 |
-| POST | `/v1/custom-providers/discover-models` | 拉取未保存配置的 `/models` |
-| POST | `/v1/custom-providers/{id}/discover-models` | 拉取已保存配置的 `/models` |
+| POST | `/v1/custom-providers/discover-models` | 拉取未保存配置的 `/models`（返回全集，前端负责按 200 截断） |
+| POST | `/v1/custom-providers/{id}/discover-models` | 拉取已保存配置的 `/models`（同上） |
 | GET/PUT | `/v1/provider-defaults` | 默认提供方/模型；**新建会话使用此设置**，不再被 `gateway.default_model` 遮蔽 |
 | GET | `/v1/provider-config/export` | 导出（**不含 Key**） |
 | POST | `/v1/provider-config/import` | 导入（无 Key，默认禁用） |
@@ -350,6 +350,25 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 
 Base URL **严格拼接**：`base.rstrip("/") + "/models"`、`+ "/chat/completions"`，不自动补 `/v1`。
 保存时拒绝包含 `/models` 或 `/chat/completions` 的地址。
+
+**模型数量上限**：单个提供方最多 **200** 个模型。`POST`/`PUT` 在 201 条及以上返回 422，
+`error.message` 会直接说明上限，例如：
+
+```json
+{
+  "error": {
+    "code": "INVALID_INPUT",
+    "message": "模型数量超过上限：单个提供方最多 200 个模型，请减少模型后重试。",
+    "details": {
+      "fields": [
+        {"field": "models", "reason": "List should have at most 200 items after validation, not 566"}
+      ]
+    }
+  }
+}
+```
+
+`discover-models` 本身仍返回上游全集；设置页只加入剩余容量内的模型，并提示超出数量。
 
 ## 8. 提示词接口
 
