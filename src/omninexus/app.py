@@ -21,7 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from omninexus import __version__
 from omninexus.api.provider_routes import router as provider_router
 from omninexus.api.routes import router
-from omninexus.config import AppConfig, load_config
+from omninexus.config import AppConfig, ConfigError, load_config
 from omninexus.errors import ErrorCode, OmniError
 from omninexus.gateway.router import Gateway
 from omninexus.logging import configure_logging, get_logger
@@ -140,6 +140,12 @@ def create_app(
         await provider_service.reload()
         await gateway.refresh_custom_providers()
         if config.server.host not in {"127.0.0.1", "localhost", "::1"}:
+            if not config.server.allow_insecure_bind:
+                raise ConfigError(
+                    "Refusing to bind to a non-loopback address without authentication. "
+                    "Set server.allow_insecure_bind: true (or pass --allow-insecure) only "
+                    "behind a firewall or an authenticating reverse proxy."
+                )
             log.warning(
                 "server binds to a non-loopback address without built-in authentication; "
                 "use a firewall or reverse-proxy auth"
@@ -212,6 +218,19 @@ def create_app(
                     )
             except ValueError:
                 return _json_error(ErrorCode.INVALID_INPUT, "Invalid Content-Length.", 400, request)
+        elif request.method in {"POST", "PUT", "PATCH"}:
+            # Chunked or length-less bodies skipped the check above. Enforce the
+            # same cap on the bytes actually received so the limit cannot be
+            # bypassed by omitting Content-Length.
+            body = await request.body()
+            if len(body) > config.server.max_body_bytes:
+                return _json_error(
+                    ErrorCode.PAYLOAD_TOO_LARGE,
+                    "Request body is too large.",
+                    413,
+                    request,
+                    {"max_bytes": config.server.max_body_bytes},
+                )
         try:
             response = await call_next(request)
         except OmniError:
@@ -243,13 +262,9 @@ def create_app(
 
     @app.exception_handler(OmniError)
     async def omni_error_handler(request: Request, exc: OmniError) -> JSONResponse:
-        payload = exc.as_dict()
         request_id = getattr(request.state, "request_id", "")
-        # The error contract advertises request_id inside the body; keep the
-        # header too so proxies and clients can use either.
-        payload["error"]["request_id"] = request_id
-        payload["request_id"] = request_id
-        response = JSONResponse(payload, status_code=exc.status_code)
+        exc.request_id = request_id
+        response = JSONResponse(exc.as_dict(), status_code=exc.status_code)
         response.headers["X-Request-ID"] = request_id
         return response
 

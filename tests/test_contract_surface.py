@@ -77,6 +77,29 @@ async def test_error_envelope_has_retryable_and_request_id(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream_error_envelope_matches_json_contract(tmp_path) -> None:
+    """SSE error frames must agree with the JSON envelope (retryable included)."""
+    from omninexus.api.sse import encode_sse
+
+    frame = encode_sse(
+        "error",
+        {
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "The stream ended unexpectedly.",
+                "retryable": False,
+            }
+        },
+    )
+    payload = frame.split("data: ", 1)[1].strip()
+    import json
+
+    body = json.loads(payload)
+    assert body["error"]["retryable"] is False
+    assert set(body["error"]) >= {"code", "message", "retryable"}
+
+
+@pytest.mark.asyncio
 async def test_provider_defaults_match_actual_turn_model(tmp_path) -> None:
     """Regression for the two-path drift reported by Dounai."""
     import httpx

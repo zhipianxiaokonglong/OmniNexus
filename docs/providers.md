@@ -198,3 +198,38 @@ models:
 - 日志只打印 provider/model/错误码/耗时；错误正文不会透传给客户端。
 - 使用第三方中转/OpenRouter 时，对话会发送给该中转及其路由到的模型厂商；请自行评估数据政策。
 - 本地 provider 不经过云端，但模型本身可能仍有网络行为，需自行审查。
+
+### 6.1 出站目标策略（0.3.4 起）
+
+「测试连接」「发现模型」会把请求发往用户填写的 URL，并可能带上该提供方已保存的 API Key。
+因此这两类端点遵循以下规则：
+
+| 规则 | 行为 |
+| --- | --- |
+| 已保存的提供方 | 只用**已保存的 Base URL**；请求体里的 `baseUrl` 被忽略 |
+| 未保存的提供方 + `id` | 只有当 `baseUrl` 与已保存地址**完全一致**时才复用已存密钥 |
+| 覆盖了 `baseUrl` | 必须**显式**传 `apiKey`，否则请求不带鉴权头 |
+| 回环 / 私网 / 链路本地 / 元数据地址 | 默认拒绝，返回 `422 EGRESS_BLOCKED` |
+| DNS 解析 | 解析后校验全部 A/AAAA，并把已校验 IP pin 到实际连接（防 DNS 重绑） |
+
+本地模型（Ollama / LM Studio）默认会被上述规则拦截。需要时显式开启：
+
+```yaml
+server:
+  allow_private_targets: true
+```
+
+或环境变量 `OMNI_ALLOW_PRIVATE_TARGETS=1`。开启前请确认该 URL 可信：它会收到该提供方的 API Key。
+更推荐的做法是使用内置的 `ollama` / `lmstudio` / `vllm` / `llamacpp` 提供方条目。
+
+### 6.2 绑定地址
+
+服务**没有内置认证**。绑定到非回环地址默认会**拒绝启动**；如确需在防火墙或带认证的反向代理后
+对外提供服务，显式设置：
+
+```yaml
+server:
+  allow_insecure_bind: true
+```
+
+或 `OMNI_ALLOW_INSECURE_BIND=1` / `--allow-insecure`。

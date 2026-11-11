@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.4 — 2026-11-11
+
+### Security
+
+- **BYOK 密钥外发 / SSRF**：自定义提供方的「测试连接」「发现模型」不再把已存密钥发往
+  请求体指定的 URL。已保存提供方只用已存 Base URL；覆盖 URL 时必须显式提供 `apiKey`。
+- **出站策略**：拒绝回环/私网/链路本地/元数据地址，DNS 解析后校验全部记录并把已校验 IP
+  pin 到实际连接（防 DNS 重绑）；新增 `EGRESS_BLOCKED`（422）。
+  本地模型需显式 `server.allow_private_targets: true`。
+- **绑定加固**：非回环绑定且未显式放行时拒绝启动（`server.allow_insecure_bind` /
+  `--allow-insecure` / `OMNI_ALLOW_INSECURE_BIND=1`）。
+- **请求体上限**：不再只依赖 `Content-Length`；chunked / 无长度请求按实际字节数校验。
+
+### Fixed
+
+- `OmniError.as_dict()` 补齐 `request_id`，与 `X-Request-ID` 一致。
+- SSE 兜底错误帧 `retryable` 由 `true` 改为 `false`，与 JSON 路径一致。
+- 非流式 `run_json` 重建错误时保留 `retryable`。
+- 新增回归测试 32 例（`test_provider_security.py`、`test_hardening.py`）。
+
 ## 0.3.3 — 2026-11-07
 
 ### Added

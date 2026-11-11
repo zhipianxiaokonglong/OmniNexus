@@ -21,11 +21,13 @@ from omninexus.errors import ErrorCode, OmniError
 from omninexus.providers.models import (
     CAPABILITY_PRESETS,
     CustomProviderRecord,
+    CustomProviderSnapshot,
     ProviderDefaults,
 )
 from omninexus.providers.service import ProviderService
 from omninexus.providers.store import CustomProviderStore
 from omninexus.providers.tester import discover_models, test_provider
+from omninexus.providers.urls import BaseUrlError, validate_base_url
 
 router = APIRouter(prefix="/v1")
 
@@ -195,16 +197,41 @@ async def delete_custom_provider(
     await _refresh(request)
 
 
+def _same_target(left: str | None, right: str | None) -> bool:
+    """Compare two Base URLs without raising on malformed input."""
+    if not left or not right:
+        return False
+    try:
+        return validate_base_url(left) == validate_base_url(right)
+    except BaseUrlError:
+        return False
+
+
+def _stored_key_for_url(
+    snapshot: CustomProviderSnapshot | None, base_url: str | None
+) -> str | None:
+    """Return the stored key only when the request targets the stored URL.
+
+    This is the fix for the BYOK/SSRF finding: a caller must not be able to aim
+    a provider's saved key at a URL of their choosing. Overriding the Base URL
+    is still possible, but then the caller has to supply the key explicitly.
+    """
+    if snapshot is None or not snapshot.provider.has_api_key:
+        return None
+    if not _same_target(base_url, snapshot.provider.base_url):
+        return None
+    return snapshot.api_key
+
+
 @router.post("/custom-providers/test")
 async def test_unsaved_provider(request: Request, body: ProviderTestRequest) -> dict[str, Any]:
     _ensure_protocol(body.protocol)
-    api_key = body.api_key.get_secret_value() if body.api_key is not None else None
-    if body.id and not api_key:
-        snapshot = _service(request).get_custom(body.id)
-        if snapshot:
-            api_key = snapshot.api_key
     if not body.base_url:
         raise OmniError(ErrorCode.INVALID_INPUT, "Base URL 不能为空。", status_code=422)
+    explicit_key = body.api_key.get_secret_value() if body.api_key is not None else None
+    api_key = explicit_key
+    if api_key is None and body.id:
+        api_key = _stored_key_for_url(_service(request).get_custom(body.id), body.base_url)
     result = await test_provider(
         base_url=body.base_url,
         api_key=api_key,
@@ -213,6 +240,7 @@ async def test_unsaved_provider(request: Request, body: ProviderTestRequest) -> 
         model=body.model,
         probe_multimodal=body.probe_multimodal,
         transport=request.app.state.provider_transport,
+        allow_private_targets=request.app.state.config.server.allow_private_targets,
     )
     # Unsaved tests must not mark the persisted provider as verified: the
     # request may contain a different Base URL/key than the saved config.
@@ -226,17 +254,24 @@ async def test_saved_provider(
     _ensure_protocol(body.protocol)
     provider = await _store(request).get(provider_id)
     snapshot = _service(request).get_custom(provider_id)
-    api_key = body.api_key.get_secret_value() if body.api_key is not None else None
-    if api_key is None and snapshot:
-        api_key = snapshot.api_key
+    explicit_key = body.api_key.get_secret_value() if body.api_key is not None else None
+    # A saved provider is always tested against its saved URL. A Base URL in the
+    # body is ignored here: honouring it would let the stored key be aimed at an
+    # arbitrary host (BYOK exfiltration + SSRF). Use the unsaved endpoint to
+    # probe a different URL.
+    base_url = provider.base_url
+    api_key = explicit_key
+    if api_key is None:
+        api_key = _stored_key_for_url(snapshot, base_url)
     result = await test_provider(
-        base_url=body.base_url or provider.base_url,
+        base_url=base_url,
         api_key=api_key,
         headers=_headers(body) or provider.headers,
         timeout_seconds=body.timeout_seconds,
         model=body.model,
         probe_multimodal=body.probe_multimodal,
         transport=request.app.state.provider_transport,
+        allow_private_targets=request.app.state.config.server.allow_private_targets,
     )
     if body.model:
         await _record_verification(request, provider_id, body.model, result)
@@ -245,19 +280,19 @@ async def test_saved_provider(
 
 @router.post("/custom-providers/discover-models")
 async def discover_unsaved_models(request: Request, body: DiscoverModelsRequest) -> dict[str, Any]:
-    api_key = body.api_key.get_secret_value() if body.api_key is not None else None
-    if body.id and not api_key:
-        snapshot = _service(request).get_custom(body.id)
-        if snapshot:
-            api_key = snapshot.api_key
     if not body.base_url:
         raise OmniError(ErrorCode.INVALID_INPUT, "Base URL 不能为空。", status_code=422)
+    explicit_key = body.api_key.get_secret_value() if body.api_key is not None else None
+    api_key = explicit_key
+    if api_key is None and body.id:
+        api_key = _stored_key_for_url(_service(request).get_custom(body.id), body.base_url)
     models = await discover_models(
         base_url=body.base_url,
         api_key=api_key,
         headers=_headers(body),
         timeout_seconds=body.timeout_seconds,
         transport=request.app.state.provider_transport,
+        allow_private_targets=request.app.state.config.server.allow_private_targets,
     )
     return {"models": models, "unverified": True}
 
@@ -268,15 +303,19 @@ async def discover_saved_models(
 ) -> dict[str, Any]:
     provider = await _store(request).get(provider_id)
     snapshot = _service(request).get_custom(provider_id)
-    api_key = body.api_key.get_secret_value() if body.api_key is not None else None
-    if api_key is None and snapshot:
-        api_key = snapshot.api_key
+    explicit_key = body.api_key.get_secret_value() if body.api_key is not None else None
+    # Same rule as the saved test endpoint: never follow a body Base URL here.
+    base_url = provider.base_url
+    api_key = explicit_key
+    if api_key is None:
+        api_key = _stored_key_for_url(snapshot, base_url)
     models = await discover_models(
-        base_url=body.base_url or provider.base_url,
+        base_url=base_url,
         api_key=api_key,
         headers=_headers(body) or provider.headers,
         timeout_seconds=body.timeout_seconds,
         transport=request.app.state.provider_transport,
+        allow_private_targets=request.app.state.config.server.allow_private_targets,
     )
     return {"models": models, "unverified": True}
 

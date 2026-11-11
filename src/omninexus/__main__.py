@@ -15,6 +15,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--config", default=None, help="Path to config YAML")
     parser.add_argument("--reload", action="store_true", help="Development auto-reload")
+    parser.add_argument(
+        "--allow-insecure",
+        action="store_true",
+        help="Allow binding to a non-loopback host without authentication",
+    )
     args = parser.parse_args(argv)
 
     if args.config:
@@ -30,6 +35,16 @@ def main(argv: list[str] | None = None) -> int:
 
     host = args.host or config.server.host
     port = args.port or config.server.port
+    if args.allow_insecure:
+        config.server.allow_insecure_bind = True
+    if host not in {"127.0.0.1", "localhost", "::1"} and not config.server.allow_insecure_bind:
+        print(
+            "Refusing to bind to a non-loopback host without authentication.\n"
+            "OmniNexus has no built-in auth; put it behind a firewall or an "
+            "authenticating reverse proxy, then re-run with --allow-insecure.",
+            file=sys.stderr,
+        )
+        return 2
     print(f"OmniNexus {host}:{port}  (docs: http://{host}:{port}/docs)")
     print("Local-first: archives stay in the local data directory; keys stay in your environment.")
 

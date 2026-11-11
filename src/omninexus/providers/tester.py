@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from omninexus.errors import ErrorCode, OmniError
+from omninexus.providers.network import EgressError, PinnedTarget, guard_target
 from omninexus.providers.urls import (
     BaseUrlError,
     chat_completions_url,
@@ -38,12 +39,41 @@ def _headers(api_key: str | None, headers: dict[str, str]) -> dict[str, str]:
     return merged
 
 
+async def guard_outbound(
+    base_url: str,
+    *,
+    allow_private: bool,
+    transport: httpx.AsyncBaseTransport | None,
+) -> PinnedTarget:
+    """Validate a user-supplied target before any key is attached to it."""
+    try:
+        pinned = await guard_target(
+            base_url,
+            allow_private=allow_private,
+            # A test transport means no real connection: DNS resolution would
+            # fail for mock hosts and would not protect anything.
+            resolve=transport is None,
+        )
+    except EgressError as exc:
+        raise OmniError(ErrorCode.EGRESS_BLOCKED, str(exc), status_code=422) from exc
+    except BaseUrlError as exc:
+        raise OmniError(ErrorCode.INVALID_INPUT, str(exc), status_code=422) from exc
+    return pinned or PinnedTarget(
+        url=validate_base_url(base_url), host_header="", server_hostname=None
+    )
+
+
 async def _request(
-    client: httpx.AsyncClient, method: str, url: str, **kwargs: Any
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    extensions: dict[str, Any] | None = None,
+    **kwargs: Any,
 ) -> tuple[httpx.Response | None, int | None, str | None]:
     started = time.monotonic()
     try:
-        response = await client.request(method, url, **kwargs)
+        response = await client.request(method, url, extensions=extensions, **kwargs)
         return response, int((time.monotonic() - started) * 1000), None
     except httpx.TimeoutException:
         return None, int((time.monotonic() - started) * 1000), "timeout"
@@ -62,16 +92,20 @@ async def test_provider(
     model: str | None,
     probe_multimodal: bool,
     transport: httpx.AsyncBaseTransport | None = None,
+    allow_private_targets: bool = False,
 ) -> dict[str, Any]:
     try:
-        base_url = validate_base_url(base_url)
-    except BaseUrlError as exc:
+        pinned = await guard_outbound(
+            base_url, allow_private=allow_private_targets, transport=transport
+        )
+    except OmniError as exc:
         return {
             "status": "unreachable",
-            "message": str(exc),
+            "message": exc.message,
             "levels": [],
             "multimodal": {"status": "not_requested"},
         }
+    base_url = pinned.url
     timeout = max(1.0, min(float(timeout_seconds), 120.0))
     levels: list[dict[str, Any]] = []
     models: list[str] = []
@@ -83,7 +117,11 @@ async def test_provider(
     ) as client:
         # L1: any HTTP response proves the address is reachable.
         response, elapsed, failure = await _request(
-            client, "GET", base_url, headers=_headers(api_key, headers)
+            client,
+            "GET",
+            base_url,
+            extensions=pinned.extensions,
+            headers=_headers(api_key, headers),
         )
         if failure == "timeout":
             levels.append({"level": "reachability", "status": "timeout", "latencyMs": elapsed})
@@ -105,7 +143,11 @@ async def test_provider(
 
         # L2: /models; auth and optional list.
         response, elapsed, failure = await _request(
-            client, "GET", models_url(base_url), headers=_headers(api_key, headers)
+            client,
+            "GET",
+            models_url(base_url),
+            extensions=pinned.extensions,
+            headers=_headers(api_key, headers),
         )
         if failure == "timeout":
             levels.append({"level": "models", "status": "timeout", "latencyMs": elapsed})
@@ -201,6 +243,7 @@ async def test_provider(
             client,
             "POST",
             chat_completions_url(base_url),
+            extensions=pinned.extensions,
             headers=_headers(api_key, headers),
             json={
                 "model": model,
@@ -265,6 +308,7 @@ async def test_provider(
                 client,
                 "POST",
                 chat_completions_url(base_url),
+                extensions=pinned.extensions,
                 headers=_headers(api_key, headers),
                 json={
                     "model": model,
@@ -310,11 +354,12 @@ async def discover_models(
     headers: dict[str, str],
     timeout_seconds: int,
     transport: httpx.AsyncBaseTransport | None = None,
+    allow_private_targets: bool = False,
 ) -> list[str]:
-    try:
-        base_url = validate_base_url(base_url)
-    except BaseUrlError as exc:
-        raise OmniError(ErrorCode.INVALID_INPUT, str(exc), status_code=422) from exc
+    pinned = await guard_outbound(
+        base_url, allow_private=allow_private_targets, transport=transport
+    )
+    base_url = pinned.url
     timeout = max(1.0, min(float(timeout_seconds), 120.0))
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout, connect=min(5.0, timeout)),
@@ -322,7 +367,11 @@ async def discover_models(
         transport=transport,
     ) as client:
         response, _, failure = await _request(
-            client, "GET", models_url(base_url), headers=_headers(api_key, headers)
+            client,
+            "GET",
+            models_url(base_url),
+            extensions=pinned.extensions,
+            headers=_headers(api_key, headers),
         )
     if failure == "timeout":
         raise OmniError(ErrorCode.PROVIDER_TEST_TIMEOUT, "模型列表请求超时。", status_code=504)

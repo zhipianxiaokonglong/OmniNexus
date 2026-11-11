@@ -909,6 +909,7 @@ def _error_from_frame(data: dict[str, Any]) -> OmniError:
     except ValueError:
         code = ErrorCode.INTERNAL_ERROR
     details = error.get("details")
+    retryable = error.get("retryable")
     return OmniError(
         code,
         str(error.get("message") or "Model request failed."),
@@ -920,5 +921,6 @@ def _error_from_frame(data: dict[str, Any]) -> OmniError:
             ErrorCode.PROVIDER_RATE_LIMITED,
         }
         else 502,
+        retryable=bool(retryable) if isinstance(retryable, bool) else False,
         details=details if isinstance(details, dict) else None,
     )

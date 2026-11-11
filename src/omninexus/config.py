@@ -55,6 +55,14 @@ class ServerConfig(BaseModel):
     trusted_hosts: list[str] = Field(
         default_factory=lambda: ["127.0.0.1", "localhost", "::1", "testserver"]
     )
+    # Outbound policy for user-supplied provider URLs. Private targets stay
+    # blocked by default so a request cannot aim a stored API key at localhost,
+    # a LAN host or a cloud metadata address. Local model users enable this
+    # explicitly (or use the built-in ollama/lmstudio provider entries).
+    allow_private_targets: bool = False
+    # Binding to a non-loopback address without authentication is refused unless
+    # this is set explicitly (the service has no built-in auth).
+    allow_insecure_bind: bool = False
     log_level: str = "INFO"
     log_format: Literal["text", "json"] = "text"
     log_file: str | None = None
@@ -414,6 +422,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             raise ConfigError("OMNI_PORT must be an integer") from exc
     if os.environ.get("OMNI_DATA_DIR"):
         config.storage.data_dir = os.environ["OMNI_DATA_DIR"]
+    if os.environ.get("OMNI_ALLOW_INSECURE_BIND", "").lower() in {"1", "true", "yes", "on"}:
+        config.server.allow_insecure_bind = True
+    if os.environ.get("OMNI_ALLOW_PRIVATE_TARGETS", "").lower() in {"1", "true", "yes", "on"}:
+        config.server.allow_private_targets = True
     if os.environ.get("OMNI_MEMORY_BASE_URL"):
         config.memory.base_url = os.environ["OMNI_MEMORY_BASE_URL"].rstrip("/")
     if os.environ.get("SEARXNG_BASE_URL"):

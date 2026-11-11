@@ -11,8 +11,10 @@ OmniNexus 接收上游多模态输入事件，完成模型路由、提示词渲�
 
 ---
 
-## 当前范围（v0.3.3）
+## 当前范围（v0.3.4）
 
+- **安全修复**：自定义提供方的测试/发现不再把已存密钥发往请求体指定的 URL；出站目标默认
+  拒绝回环/私网/元数据地址并 pin 已校验 IP；非回环绑定默认拒绝启动。
 - **跨仓库契约**：新增只读 `GET /v1/contract`；`/v1/healthz` 暴露 `service_version`、
   `contract_version`、`tag_contract`；版本语义与不兼容策略已文档化。
 - **旧会话兼容**：无回答的 0.3.1 前旧会话自动跟随当前默认；有回答的保持原模型并返回可读 409。
@@ -188,7 +190,7 @@ python -m ruff check src tests
 python -m pytest --cov=omninexus --cov-report=term-missing
 ```
 
-86 个自动化测试覆盖：跨仓库契约端点/版本、旧会话迁移与 409、Emotion contract v2、
+119 个自动化测试覆盖：BYOK 密钥外发/SSRF、出站策略、绑定与体积上限、跨仓库契约端点/版本、旧会话迁移与 409、Emotion contract v2、
 metadata/session 信号、引用正文策略、默认提供方、
 自定义提供方 CRUD/Key 加密/测试分级/模型发现/200 上限/默认设置/导入导出/迁移、
 多模型切换与上下文延续、重试/回退、限流、超时、能力协商、SSE 契约、提示词版本化、
@@ -211,7 +213,7 @@ metadata/session 信号、引用正文策略、默认提供方、
 | [测试报告](docs/test-report.md) | 用例、故障注入、根因分析、限制 |
 | [验收对照](docs/acceptance.md) | 需求 → 证据映射 |
 | [兼容性矩阵](docs/COMPATIBILITY.md) | 版本、Emotion v2、Event v1、Session 信号 |
-| [0.3.3 发布说明](docs/releases/v0.3.3.md) | 契约端点、旧会话兼容、版本语义 |
+| [0.3.4 发布说明](docs/releases/v0.3.4.md) | 安全修复：BYOK 外发、SSRF、绑定加固 |`n| [0.3.3 发布说明](docs/releases/v0.3.3.md) | 契约端点、旧会话兼容、版本语义 |
 | [0.3.2 发布说明](docs/releases/v0.3.2.md) | Issue #1：200 模型上限可读错误与前端截断 |
 | [0.3.1 发布说明](docs/releases/v0.3.1.md) | 默认提供方 hotfix |
 | [0.3.0 发布说明](docs/releases/v0.3.0.md) | Emotion v2、引用策略、session 信号 |

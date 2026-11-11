@@ -8,6 +8,13 @@ server:
   cors_origins: []
   max_body_bytes: 20971520
   trusted_hosts: [127.0.0.1, localhost, "::1", testserver]
+  # Outbound policy for user-supplied provider URLs. When false, tests and
+  # /models discovery refuse loopback / private / link-local targets, so a
+  # request cannot aim a stored API key at localhost or a metadata endpoint.
+  # Set true only if you intentionally connect to a local model by URL.
+  allow_private_targets: false
+  # Refuse non-loopback bind without auth unless this is explicitly true.
+  allow_insecure_bind: false
   log_level: INFO
   log_format: text
   log_file: null

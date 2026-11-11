@@ -1,6 +1,6 @@
 # 测试与自评估报告
 
-- 版本：OmniNexus 0.3.3（跨仓库契约 + 旧会话兼容）
+- 版本：OmniNexus 0.3.4（安全修复 + 跨仓库契约）
 - 任务书：v1.1 + 自定义提供方需求；外部记忆管线仍为 Reserved
 - 测试日期：2026-11-07
 - 环境：Windows 11（amd64），Python 3.13.9，pytest 8.x，httpx MockTransport，SQLite 3
@@ -10,7 +10,7 @@
 ## 1. 结果摘要
 
 ```text
-86 passed
+119 passed
 ruff check: All checks passed
 coverage: 81% statements/branches (见 §9)
 ```
@@ -72,6 +72,18 @@ coverage: 81% statements/branches (见 §9)
 | `test_healthz_exposes_service_and_contract_versions` | 包版本与契约版本分离 | PASS |
 | `test_error_envelope_has_retryable_and_request_id` | 错误体字段齐备 | PASS |
 | `test_provider_defaults_match_actual_turn_model` | 设置默认与 SSE 实际模型一致 | PASS |
+| `test_unsaved_test_does_not_forward_stored_key_to_overridden_url` | BYOK 外发（未保存 test） | PASS |
+| `test_unsaved_discovery_does_not_forward_stored_key_to_overridden_url` | BYOK 外发（未保存 discover） | PASS |
+| `test_saved_test_ignores_overridden_url_and_keeps_stored_key` | 已保存端点忽略覆盖 URL | PASS |
+| `test_saved_discovery_ignores_overridden_url` | 同上（discover） | PASS |
+| `test_explicit_key_overriding_url_is_sent_only_to_that_url` | 显式 key 只发往显式目标 | PASS |
+| `test_saved_target_is_tested_with_its_stored_key` | 正常路径仍使用已存密钥 | PASS |
+| `test_private_and_loopback_targets_are_blocked` | 11 类内网/回环/元数据地址被拒 | PASS |
+| `test_metadata_address_is_rejected` | `169.254.169.254` / `10.x` 返回 `EGRESS_BLOCKED` | PASS |
+| `test_allow_private_targets_opt_in_restores_local_testing` | 本地模型显式放行 | PASS |
+| `test_body_limit_applies_without_content_length` | chunked 超大 body 返回 413 | PASS |
+| `test_non_loopback_bind_is_refused_without_flag` | 非回环绑定拒绝启动 | PASS |
+| `test_stream_error_envelope_matches_json_contract` | SSE 兜底帧 `retryable=false` | PASS |
 
 ## 4. 故障注入矩阵
 
@@ -204,6 +216,23 @@ coverage: 81% statements/branches (见 §9)
 - **O-05**：引用 URL 默认不进入正文；citations 事件/API 保留；可配置内嵌。
 - **O-06**：0.3.0 + tag + COMPATIBILITY/发布说明。
 
+### R-12 自定义提供方 BYOK 密钥外发与 SSRF（0.3.4）
+
+- **现象**：`/v1/custom-providers/*` 的测试/发现端点允许请求体覆盖 Base URL，同时自动复用
+  已存（解密后）的 API Key，并以 `Authorization: Bearer` 发往被覆盖地址；目标地址只做语法校验。
+- **根因**：
+  1. `api_key = body.api_key or 已存密钥` 与 `base_url = 请求体指定 or 已存地址` 来自不同信任域；
+  2. `validate_base_url()` 只校验 scheme/netloc，不判断地址类别；
+  3. 返回值回显 `levels[].status`/`latencyMs`/`models`，构成 SSRF 回显通道。
+- **修复**：
+  1. 已保存端点只用已存 URL，忽略 `body.baseUrl`；
+  2. 未保存端点仅在 `baseUrl` 与已存地址一致时复用密钥；
+  3. 覆盖 URL 必须显式给 `apiKey`，否则不带鉴权头；
+  4. 新增 `providers/network.py`：地址类别校验 + DNS 全记录校验 + IP pin（`sni_hostname`）；
+  5. 新增 `EGRESS_BLOCKED`；本地模型需 `server.allow_private_targets: true`；
+  6. 非回环绑定默认拒绝启动；请求体上限按实际字节数校验。
+- **回归**：`tests/test_provider_security.py`（24 例）、`tests/test_hardening.py`（8 例）。
+
 ### R-11 跨仓库契约漂移（0.3.3）
 
 - **现象**：`/v1/provider-defaults` 与对话实际模型不一致；契约版本无消费入口；旧会话 409 不可读。
@@ -256,7 +285,7 @@ coverage: 81% statements/branches (见 §9)
 
 ```text
 command: python -m pytest --cov=omninexus --cov-report=term -q
-TOTAL 4446 stmts, 655 miss, 1266 branches, 327 partial, 81% coverage
+TOTAL 4567 stmts, 674 miss, 1308 branches, 331 partial, 81% coverage
 ```
 
 主要模块：orchestrator 80%、gateway/router 79%、prompts 82%、sessions 83%、storage 91%、

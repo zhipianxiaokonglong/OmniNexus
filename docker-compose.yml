@@ -12,6 +12,9 @@ services:
     environment:
       OMNI_HOST: 0.0.0.0
       OMNI_PORT: "8000"
+      # Container-internal bind needs this flag; the port is still published
+      # only to host loopback above.
+      OMNI_ALLOW_INSECURE_BIND: "1"
     volumes:
       - omninexus-data:/app/data
     restart: unless-stopped

@@ -32,13 +32,16 @@ async def event_stream(
             except asyncio.CancelledError:
                 raise
             except Exception:  # pragma: no cover - last-resort stream boundary
+                # Must agree with the JSON error contract: INTERNAL_ERROR is not
+                # retryable (app.py uses the same value) and the envelope carries
+                # the same fields as every other error response.
                 yield encode_sse(
                     "error",
                     {
                         "error": {
                             "code": "INTERNAL_ERROR",
                             "message": "The stream ended unexpectedly.",
-                            "retryable": True,
+                            "retryable": False,
                         }
                     },
                 )

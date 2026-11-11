@@ -42,6 +42,7 @@ class ErrorCode(StrEnum):
     PROVIDER_TEST_MODEL_NOT_FOUND = "PROVIDER_TEST_MODEL_NOT_FOUND"
     PROVIDER_TEST_TIMEOUT = "PROVIDER_TEST_TIMEOUT"
     PROVIDER_TEST_UNVERIFIED = "PROVIDER_TEST_UNVERIFIED"
+    EGRESS_BLOCKED = "EGRESS_BLOCKED"
     NO_PROVIDER_AVAILABLE = "NO_PROVIDER_AVAILABLE"
     PROVIDER_AUTH = "PROVIDER_AUTH"
     PROVIDER_RATE_LIMITED = "PROVIDER_RATE_LIMITED"
@@ -79,6 +80,7 @@ class OmniError(Exception):
         status_code: int = 400,
         retryable: bool = False,
         details: dict[str, Any] | None = None,
+        request_id: str = "",
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -86,8 +88,14 @@ class OmniError(Exception):
         self.status_code = status_code
         self.retryable = retryable
         self.details = details or {}
+        self.request_id = request_id
 
     def as_dict(self) -> dict[str, Any]:
+        """Serialize the stable error envelope.
+
+        ``request_id`` is part of the published error contract, so it is emitted
+        here too rather than only as a response header.
+        """
         error: dict[str, Any] = {
             "code": self.code.value,
             "message": self.message,
@@ -95,6 +103,9 @@ class OmniError(Exception):
         }
         if self.details:
             error["details"] = self.details
+        if self.request_id:
+            payload = {**error, "request_id": self.request_id}
+            return {"error": payload, "request_id": self.request_id}
         return {"error": error}
 
 
