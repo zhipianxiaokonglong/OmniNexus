@@ -275,6 +275,7 @@ meta → route → delta* → warning → final（部分内容，stream=false）
 | POST | `/v1/sessions` | 创建会话 `{title?, model?, prompt_profile?, web_search?}` |
 | GET | `/v1/sessions?limit=100&offset=0` | 列表（含消息数/最后消息摘要） |
 | GET | `/v1/sessions/{id}` | 会话 + 消息 + 引用 |
+| GET | `/v1/sessions/{id}/settings` | 轻量读取会话开关（`web_search` 等），不含消息历史 |
 | PATCH | `/v1/sessions/{id}` | 更新标题/模型/提示词/搜索开关 |
 | DELETE | `/v1/sessions/{id}` | 级联删除消息与引用，204 |
 | POST | `/v1/sessions/{id}/model` | `{providerKind, providerId, modelName, model}`；切换并持久化，上下文保留 |

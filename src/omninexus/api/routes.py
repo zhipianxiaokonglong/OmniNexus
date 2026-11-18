@@ -176,6 +176,22 @@ async def get_session(request: Request, session_id: str) -> dict[str, Any]:
     return await request.app.state.sessions.detail(session_id)
 
 
+@router.get("/sessions/{session_id}/settings")
+async def get_session_settings(request: Request, session_id: str) -> dict[str, Any]:
+    """轻量读取会话级开关，不拉取消息历史。
+
+    桌面端每轮都会读一次，用来跟随 Web 页的「联网搜索」设置；
+    若复用完整会话详情，长对话会白白传输上千条消息。
+    """
+    session = await request.app.state.sessions.get(session_id)
+    return {
+        "session_id": session.id,
+        "web_search": session.web_search,
+        "model": session.model,
+        "prompt_profile": session.prompt_profile,
+    }
+
+
 @router.patch("/sessions/{session_id}")
 async def update_session(request: Request, session_id: str, body: SessionUpdate) -> dict[str, Any]:
     fields = {
