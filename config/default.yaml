@@ -79,8 +79,9 @@ memory:
 
 search:
   # Only the current user query (trimmed) is ever sent to the search provider.
-  enabled: false
-  provider: tavily
+  # 默认使用 Bing 网页搜索：无需 API Key，开箱可用；会话内仍需打开搜索开关。
+  enabled: true
+  provider: bing
   top_k: 5
   timeout_s: 10
   max_query_chars: 256

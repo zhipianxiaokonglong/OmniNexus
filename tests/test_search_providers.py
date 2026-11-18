@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 
 import httpx
@@ -9,6 +10,7 @@ import pytest
 
 from omninexus.config import CustomSearchConfig, SearchConfig
 from omninexus.search.service import (
+    BingProvider,
     BraveProvider,
     DuckDuckGoProvider,
     SearxngProvider,
@@ -137,6 +139,46 @@ async def test_duckduckgo_html_parsing() -> None:
         assert results[0].url == "https://example.com/ddg"
         assert results[0].title == "DDG result"
         assert "snippet" in results[0].snippet
+    finally:
+        await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_bing_html_parsing_and_redirect_unwrap() -> None:
+    target = base64.urlsafe_b64encode(b"https://example.com/bing-target").decode().rstrip("=")
+    html = f"""
+    <ol id="b_results">
+      <li class="b_algo">
+        <h2><a href="https://example.com/direct">Direct <strong>result</strong></a></h2>
+        <div class="b_caption"><p class="b_lineclamp2">First snippet</p></div>
+      </li>
+      <li class="b_algo">
+        <h2><a
+          href="https://www.bing.com/ck/a?!&amp;&amp;p=abc&amp;u=a1{target}"
+        >Redirect result</a></h2>
+        <div class="b_caption"><p class="b_lineclamp2">Second snippet</p></div>
+      </li>
+    </ol>
+    """
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, text=html)
+
+    provider = BingProvider(config("bing"), transport=make_transport(handler))
+    try:
+        results = await provider.search("bing query", 3)
+        assert seen[0].url.params["q"] == "bing query"
+        assert [item.url for item in results] == [
+            "https://example.com/direct",
+            "https://example.com/bing-target",
+        ]
+        assert results[0].title == "Direct result"
+        assert results[0].snippet == "First snippet"
+        assert results[1].rank == 2
+        assert all(item.source == "bing" for item in results)
     finally:
         await provider.close()
 

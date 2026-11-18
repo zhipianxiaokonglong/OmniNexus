@@ -12,7 +12,7 @@
 | 4 | 提示词模板/版本/变量/system prompt；与模型解耦 | PromptProfile + 不可变版本 + Jinja2 沙箱 | `prompts/manager.py`、`test_prompt_profile_version_lifecycle`、`test_prompt_is_decoupled...` |
 | 5 | 预留提示词更换接口，供后期 UI | 读/建/存/激活/重置/删/预览 | `/v1/prompts/*`、`docs/prompt-api.md`、页面提示词管理 |
 | 6 | 测试人格测试后删除 | 仓库默认系统提示词为空；临时测试配置仅在临时数据目录创建，验收前删除 | `test_prompts` 中无固定人设；发布检查；`docs/test-report.md` |
-| 7 | 联网搜索（工具/RAG）、源可配置、引用溯源 | RAG；Tavily/Brave/SearXNG/DDG/自定义；引用表 + 正文来源 | `search/service.py`、`test_search_only_sends_current_query...` |
+| 7 | 联网搜索（工具/RAG）、源可配置、引用溯源 | RAG；默认 Bing，另支持 Tavily/Brave/SearXNG/DDG/自定义；引用表 + 正文来源 | `search/service.py`、`test_search_only_sends_current_query...` |
 | 8 | 多模态能力协商/降级/路由 | 能力表、视觉路由、文本化降级、回退时剥离图片 | `test_capability_route_to_vision_model`、`test_capability_degrade...`、`test_vision_primary_falls_back...` |
 | 9 | 对话存档、历史、裁剪、导出 | SQLite WAL；最近窗口预算；JSON/MD；删除 | `sessions/service.py`、`test_archive_create_export_delete`、`test_context_builder_keeps_latest_and_trims` |
 | 10 | 情感/类型/意图标签随输出事件 | 本地确定性分类；delta/final 都带 tags | `classifier.py`、`test_sse_event_contract`、`test_classifier.py` |

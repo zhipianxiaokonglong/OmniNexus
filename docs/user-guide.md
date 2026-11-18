@@ -127,8 +127,8 @@ ollama serve
 
 ### 3.4 联网搜索
 
-「联网搜索」开关默认禁用。启用前需要在 `config/default.yaml` 配置搜索源，并在 `.env` 配置密钥
-（如 `TAVILY_API_KEY`）。
+默认使用 **Bing 网页搜索**：无需 API Key，开箱可用。打开页面上的「联网搜索」开关后，
+本轮对话会把当前问题发给 Bing，并把结果作为参考资料。
 
 - 只发送**当前查询**，不发送历史；
 - 默认**不会**把来源 URL 写进正文（避免语音朗读 URL）；引用通过 SSE `citations` 事件、
@@ -136,6 +136,9 @@ ollama serve
 - 如确需正文内嵌来源，可在 `config/default.yaml` 设置 `gateway.citations_in_content: true`；
 - 页面在回答下方显示可点击引用；
 - 搜索失败不会中断回答，只是没有引用。
+
+如需换用 Tavily / Brave / SearXNG / DuckDuckGo / 自定义源，修改
+`config/default.yaml` 的 `search.provider` 并按需配置密钥（如 `TAVILY_API_KEY`）。
 
 ### 3.5 图片
 

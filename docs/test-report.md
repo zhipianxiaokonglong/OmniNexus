@@ -38,7 +38,7 @@ coverage: 81% statements/branches (见 §9)
 | `test_gateway.py` | 重试/回退/超时/限流、切换、能力路由/降级、全失败 |
 | `test_contract.py` | SSE 帧、JSON 精确字段、幂等、输入兼容、校验 |
 | `test_search.py` | 只发当前查询、引用、搜索失败不阻断、默认禁用 |
-| `test_search_providers.py` | Tavily/Brave/SearXNG/DuckDuckGo 请求形状与解析 |
+| `test_search_providers.py` | Bing/Tavily/Brave/SearXNG/DuckDuckGo 请求形状与解析 |
 | `test_memory_reserved.py` | 禁用零影响、健康/查询/写回、超时、熔断、直接调用 |
 | `test_provider_adapters.py` | Anthropic/Gemini/Cohere 原生 SSE + 图片编码 + 401 |
 | `test_custom_providers.py` | 自定义提供方 CRUD、Key 加密/掩码、三级测试、多模态探测、严格 URL、默认/删除/禁用、导入导出、迁移、日志脱敏 |

@@ -170,8 +170,10 @@ class CustomSearchConfig(BaseModel):
 
 
 class SearchConfig(BaseModel):
-    enabled: bool = False
-    provider: Literal["none", "tavily", "brave", "searxng", "duckduckgo", "custom"] = "none"
+    # 默认使用 Bing 网页搜索：无需 API Key，开箱可用。
+    # 会话/请求仍需显式打开 web_search，才会真的发出查询。
+    enabled: bool = True
+    provider: Literal["none", "tavily", "brave", "searxng", "duckduckgo", "bing", "custom"] = "bing"
     top_k: int = 5
     timeout_s: float = 10.0
     max_query_chars: int = 256

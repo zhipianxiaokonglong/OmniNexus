@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- 新增 Bing 网页搜索源（无需 API Key），并作为默认搜索源：Web 页「联网搜索」开关开箱可用。
+- `test_search_providers.py` 增加 Bing 结果解析与跳转链接还原用例。
+
 ## 0.3.4 — 2026-11-11
 
 ### Security

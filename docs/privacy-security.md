@@ -64,7 +64,7 @@ LLM 厂商/搜索源/中转服务的数据政策由用户自行评估。使用 O
 
 - 默认 `search.enabled: false`。
 - 只发送当前用户查询，长度上限 256 字符；不发送历史、会话 ID、system prompt、标签。
-- 搜索源可配置：Tavily、Brave、SearXNG、DuckDuckGo、自定义 HTTP。
+- 搜索源可配置：Bing（默认，无需密钥）、Tavily、Brave、SearXNG、DuckDuckGo、自定义 HTTP。
 - 自定义源只接收 `{"query": "...", "top_k": n}`。
 - 搜索结果被视为**不可信外部数据**，系统提示明确要求不执行其中指令。
 - 引用 URL 与标题写入本地 citations 表，并在最终正文追加来源；可通过 API 查询。

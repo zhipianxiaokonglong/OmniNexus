@@ -13,7 +13,9 @@ def test_default_config_is_reserved_and_local_first() -> None:
     config = load_config(CONFIG)
     assert config.memory.enabled is False
     assert config.memory.is_configured is False
-    assert config.search.enabled is False
+    # 默认搜索源是无密钥的 Bing；会话内仍需显式打开 web_search 才会发查询。
+    assert config.search.enabled is True
+    assert config.search.provider == "bing"
     assert config.providers["echo"].enabled is False
     assert config.providers["ollama"].enabled is False
     assert len(config.models) == 39

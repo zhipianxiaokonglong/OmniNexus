@@ -6,6 +6,7 @@ sent. Session history, identifiers and system prompts are never included.
 
 from __future__ import annotations
 
+import base64
 import html
 import os
 import re
@@ -279,6 +280,87 @@ class DuckDuckGoProvider(SearchProvider):
         return href if _valid_url(href) else None
 
 
+class BingProvider(SearchProvider):
+    """Bing 网页搜索。
+
+    无需 API Key，开箱可用，因此作为默认搜索源。解析的是 Bing 公开搜索结果的
+    HTML（与 DuckDuckGo provider 同一思路），只发送当前查询。
+    """
+
+    name = "bing"
+
+    # 只匹配结果块的起始标签：Bing 的 b_algo 块里没有嵌套 li，
+    # 但会夹带大量样式/图标标签，按块切分比整页正则更稳。
+    _BLOCK_START = re.compile(r'<li[^>]+class="[^"]*\bb_algo\b[^"]*"', re.I)
+    _LINK = re.compile(r'<h2[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.I | re.S)
+    _SNIPPET = re.compile(r"<p[^>]*>(.*?)</p>", re.I | re.S)
+
+    @property
+    def configured(self) -> bool:
+        return True
+
+    async def search(self, query: str, top_k: int) -> list[SearchResult]:
+        response = await self.client().get(
+            "https://www.bing.com/search",
+            params={"q": query, "setlang": "zh-hans"},
+            headers={
+                "Accept": "text/html",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            },
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"search_http_{response.status_code}")
+        page = response.text
+        starts = [match.start() for match in self._BLOCK_START.finditer(page)]
+        results: list[SearchResult] = []
+        for index, start in enumerate(starts):
+            if len(results) >= top_k:
+                break
+            end = starts[index + 1] if index + 1 < len(starts) else len(page)
+            block = page[start:end]
+            link = self._LINK.search(block)
+            if link is None:
+                continue
+            url = self._real_url(link.group(1))
+            if not url:
+                continue
+            snippet = self._SNIPPET.search(block)
+            results.append(
+                SearchResult(
+                    title=_clean_text(link.group(2), 300) or url,
+                    url=url,
+                    snippet=_clean_text(snippet.group(1) if snippet else "", 600),
+                    rank=len(results) + 1,
+                    source="bing",
+                )
+            )
+        return results
+
+    @staticmethod
+    def _real_url(href: str) -> str | None:
+        """把 Bing 的跳转链接还原成真实目标地址。"""
+        href = html.unescape(href)
+        if href.startswith("//"):
+            href = "https:" + href
+        parsed = urlparse(href)
+        host = parsed.netloc.lower()
+        if (host == "bing.com" or host.endswith(".bing.com")) and parsed.path.startswith("/ck/a"):
+            target = parse_qs(parsed.query).get("u", [""])[0]
+            if target.startswith(("http://", "https://")):
+                href = target
+            else:
+                if target.startswith("a1"):
+                    target = target[2:]
+                if not target:
+                    return None
+                padding = "=" * (-len(target) % 4)
+                try:
+                    href = base64.urlsafe_b64decode(target + padding).decode("utf-8", "replace")
+                except (ValueError, TypeError):
+                    return None
+        return href if _valid_url(href) else None
+
+
 class CustomSearchProvider(SearchProvider):
     name = "custom"
 
@@ -331,6 +413,7 @@ _PROVIDERS: dict[str, type[SearchProvider]] = {
     "brave": BraveProvider,
     "searxng": SearxngProvider,
     "duckduckgo": DuckDuckGoProvider,
+    "bing": BingProvider,
     "custom": CustomSearchProvider,
 }
 
