@@ -144,41 +144,74 @@ async def test_duckduckgo_html_parsing() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bing_html_parsing_and_redirect_unwrap() -> None:
+async def test_bing_rss_parsing_and_redirect_unwrap() -> None:
     target = base64.urlsafe_b64encode(b"https://example.com/bing-target").decode().rstrip("=")
-    html = f"""
-    <ol id="b_results">
-      <li class="b_algo">
-        <h2><a href="https://example.com/direct">Direct <strong>result</strong></a></h2>
-        <div class="b_caption"><p class="b_lineclamp2">First snippet</p></div>
-      </li>
-      <li class="b_algo">
-        <h2><a
-          href="https://www.bing.com/ck/a?!&amp;&amp;p=abc&amp;u=a1{target}"
-        >Redirect result</a></h2>
-        <div class="b_caption"><p class="b_lineclamp2">Second snippet</p></div>
-      </li>
-    </ol>
+    feed = f"""<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0"><channel>
+      <item>
+        <title>Direct &amp; result</title>
+        <link>https://example.com/direct</link>
+        <description>First &lt;b&gt;snippet&lt;/b&gt;</description>
+      </item>
+      <item>
+        <title>Redirect result</title>
+        <link>https://www.bing.com/ck/a?!&amp;&amp;u=a1{target}</link>
+        <description>Second snippet</description>
+      </item>
+    </channel></rss>
     """
 
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return httpx.Response(200, text=html)
+        return httpx.Response(200, text=feed)
 
     provider = BingProvider(config("bing"), transport=make_transport(handler))
     try:
+        assert provider.configured is True
         results = await provider.search("bing query", 3)
         assert seen[0].url.params["q"] == "bing query"
+        assert seen[0].url.params["format"] == "rss"
         assert [item.url for item in results] == [
             "https://example.com/direct",
             "https://example.com/bing-target",
         ]
-        assert results[0].title == "Direct result"
+        assert results[0].title == "Direct & result"
         assert results[0].snippet == "First snippet"
         assert results[1].rank == 2
         assert all(item.source == "bing" for item in results)
+    finally:
+        await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_bing_retries_transient_empty_response() -> None:
+    target = base64.urlsafe_b64encode(b"https://example.com/retry").decode().rstrip("=")
+    feed = f"""<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0"><channel>
+      <item>
+        <title>Retry result</title>
+        <link>https://www.bing.com/ck/a?!&amp;&amp;u=a1{target}</link>
+        <description>Recovered</description>
+      </item>
+    </channel></rss>
+    """
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(200, text="")
+        return httpx.Response(200, text=feed)
+
+    provider = BingProvider(config("bing"), transport=make_transport(handler))
+    try:
+        results = await provider.search("retry query", 3)
+        assert calls == 2
+        assert results[0].url == "https://example.com/retry"
+        assert results[0].snippet == "Recovered"
     finally:
         await provider.close()
 

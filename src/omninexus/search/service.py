@@ -6,10 +6,12 @@ sent. Session history, identifiers and system prompts are never included.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import html
 import os
 import re
+import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -283,53 +285,61 @@ class DuckDuckGoProvider(SearchProvider):
 class BingProvider(SearchProvider):
     """Bing 网页搜索。
 
-    无需 API Key，开箱可用，因此作为默认搜索源。解析的是 Bing 公开搜索结果的
-    HTML（与 DuckDuckGo provider 同一思路），只发送当前查询。
+    无需 API Key，开箱可用，因此作为默认搜索源。使用 Bing 的 RSS 结果
+    （`format=rss`）而不是整页 HTML：结果结构稳定、体积小，也不依赖页面样式。
+    只发送当前查询。
     """
 
     name = "bing"
 
-    # 只匹配结果块的起始标签：Bing 的 b_algo 块里没有嵌套 li，
-    # 但会夹带大量样式/图标标签，按块切分比整页正则更稳。
-    _BLOCK_START = re.compile(r'<li[^>]+class="[^"]*\bb_algo\b[^"]*"', re.I)
-    _LINK = re.compile(r'<h2[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.I | re.S)
-    _SNIPPET = re.compile(r"<p[^>]*>(.*?)</p>", re.I | re.S)
+    # Bing 偶尔会返回 200 + 空响应（多为瞬时限流/节点问题），换节点重试即可。
+    _ENDPOINTS = (
+        "https://www.bing.com/search",
+        "https://cn.bing.com/search",
+        "https://www.bing.com/search",
+    )
 
     @property
     def configured(self) -> bool:
         return True
 
     async def search(self, query: str, top_k: int) -> list[SearchResult]:
-        response = await self.client().get(
-            "https://www.bing.com/search",
-            params={"q": query, "setlang": "zh-hans"},
-            headers={
-                "Accept": "text/html",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            },
-        )
-        if response.status_code >= 400:
-            raise RuntimeError(f"search_http_{response.status_code}")
-        page = response.text
-        starts = [match.start() for match in self._BLOCK_START.finditer(page)]
+        root: ET.Element | None = None
+        last_status = 0
+        for attempt, endpoint in enumerate(self._ENDPOINTS):
+            if attempt:
+                await asyncio.sleep(0.4)
+            response = await self.client().get(
+                endpoint,
+                params={"q": query, "format": "rss", "setlang": "zh-hans"},
+                headers={"Accept": "application/rss+xml, application/xml;q=0.9"},
+            )
+            last_status = response.status_code
+            if response.status_code >= 400:
+                continue
+            if not response.text.strip():
+                continue
+            try:
+                root = ET.fromstring(response.text)
+            except ET.ParseError:
+                continue
+            break
+        if root is None:
+            raise RuntimeError(
+                f"search_http_{last_status}" if last_status >= 400 else "search_empty"
+            )
         results: list[SearchResult] = []
-        for index, start in enumerate(starts):
+        for item in root.findall("./channel/item"):
             if len(results) >= top_k:
                 break
-            end = starts[index + 1] if index + 1 < len(starts) else len(page)
-            block = page[start:end]
-            link = self._LINK.search(block)
-            if link is None:
-                continue
-            url = self._real_url(link.group(1))
+            url = self._real_url(item.findtext("link") or "")
             if not url:
                 continue
-            snippet = self._SNIPPET.search(block)
             results.append(
                 SearchResult(
-                    title=_clean_text(link.group(2), 300) or url,
+                    title=_clean_text(item.findtext("title") or "", 300) or url,
                     url=url,
-                    snippet=_clean_text(snippet.group(1) if snippet else "", 600),
+                    snippet=_clean_text(item.findtext("description") or "", 600),
                     rank=len(results) + 1,
                     source="bing",
                 )
@@ -339,7 +349,7 @@ class BingProvider(SearchProvider):
     @staticmethod
     def _real_url(href: str) -> str | None:
         """把 Bing 的跳转链接还原成真实目标地址。"""
-        href = html.unescape(href)
+        href = html.unescape(href).strip()
         if href.startswith("//"):
             href = "https:" + href
         parsed = urlparse(href)
