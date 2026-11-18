@@ -216,6 +216,31 @@ async def test_bing_retries_transient_empty_response() -> None:
         await provider.close()
 
 
+@pytest.mark.asyncio
+async def test_bing_strips_request_phrasing_from_chinese_query() -> None:
+    feed = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0"><channel>
+      <item>
+        <title>科技新闻</title>
+        <link>https://example.com/news</link>
+        <description>news</description>
+      </item>
+    </channel></rss>
+    """
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, text=feed)
+
+    provider = BingProvider(config("bing"), transport=make_transport(handler))
+    try:
+        await provider.search("最近的科技新闻有哪些？请给出两三条，并注明来源。", 3)
+        assert seen[0].url.params["q"] == "科技新闻"
+    finally:
+        await provider.close()
+
+
 def test_custom_search_config_requires_endpoint() -> None:
     with pytest.raises(ValueError):
         SearchConfig(

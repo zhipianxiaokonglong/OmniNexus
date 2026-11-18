@@ -292,6 +292,24 @@ class BingProvider(SearchProvider):
 
     name = "bing"
 
+    # Bing 是关键词搜索：整句“请给出两三条并注明来源”会把权重带偏到“最近/给出”等词上。
+    # 这里只去掉请求措辞，不引入任何外部信息，发送的仍然是当前查询的内容。
+    _NOISE = re.compile(
+        r"最近的|近期的|近来的|最近|近期|近来|"
+        r"请你|请帮我|请给出|请提供|请列出|请列举|请介绍|请解释|请说明|请总结|请推荐|请比较|请分析|"
+        r"请用一句话|帮我|帮忙|给我|告诉我|我想知道|我想|我要|想要|"
+        r"用一句话|简单说|简单介绍|介绍一下|介绍|解释一下|解释|说明一下|说明|"
+        r"总结一下|总结|概括一下|概括|列出|列举|给出|提供|"
+        r"查一下|查查|搜一下|搜索一下|查找一下|查询一下|看一下|"
+        r"有哪些|是什么|为什么|怎么样|怎么|如何|是否|有没有|"
+        r"两三条|几条|一些|"
+        r"并且|然后|还有|以及|"
+        r"并注明|并标注|并标明|并附上|并给出|"
+        r"注明|标注|标明|来源|出处|链接|参考文献|"
+        r"谢谢|多谢|感谢"
+    )
+    _PUNCT = re.compile(r"[\s\u3000，。！？、；：,.!?;:'\"“”‘’（）()\[\]【】<>《》…—\-_/\\|]+")
+
     # Bing 偶尔会返回 200 + 空响应（多为瞬时限流/节点问题），换节点重试即可。
     _ENDPOINTS = (
         "https://www.bing.com/search",
@@ -303,7 +321,22 @@ class BingProvider(SearchProvider):
     def configured(self) -> bool:
         return True
 
+    @classmethod
+    def _keyword_query(cls, text: str) -> str:
+        """去掉“请给出/告诉我/来源”等请求措辞，留下适合关键词搜索的内容。"""
+        cleaned = text.strip()
+        if not re.search(r"[\u4e00-\u9fff]", cleaned):
+            return cleaned
+        reduced = cls._NOISE.sub(" ", cleaned)
+        reduced = cls._PUNCT.sub(" ", reduced)
+        reduced = re.sub(r"\s+", " ", reduced).strip()
+        # 删过头就退回原查询，避免把用户真正想搜的内容也吞掉。
+        if len(re.sub(r"[\W_]", "", reduced)) < 2:
+            return cleaned
+        return reduced[:80].strip()
+
     async def search(self, query: str, top_k: int) -> list[SearchResult]:
+        search_query = self._keyword_query(query)
         root: ET.Element | None = None
         last_status = 0
         for attempt, endpoint in enumerate(self._ENDPOINTS):
@@ -311,7 +344,7 @@ class BingProvider(SearchProvider):
                 await asyncio.sleep(0.4)
             response = await self.client().get(
                 endpoint,
-                params={"q": query, "format": "rss", "setlang": "zh-hans"},
+                params={"q": search_query, "format": "rss", "setlang": "zh-hans"},
                 headers={"Accept": "application/rss+xml, application/xml;q=0.9"},
             )
             last_status = response.status_code

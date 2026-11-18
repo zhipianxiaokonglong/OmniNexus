@@ -131,6 +131,7 @@ ollama serve
 本轮对话会把当前问题发给 Bing，并把结果作为参考资料。
 
 - 只发送**当前查询**，不发送历史；
+- Bing 是关键词搜索：发送前会去掉“请/帮我/注明来源”等请求措辞，只保留检索词，不会补充额外信息；
 - 默认**不会**把来源 URL 写进正文（避免语音朗读 URL）；引用通过 SSE `citations` 事件、
   页面引用列表和 `/v1/events/{event_id}/citations` 提供；
 - 如确需正文内嵌来源，可在 `config/default.yaml` 设置 `gateway.citations_in_content: true`；
